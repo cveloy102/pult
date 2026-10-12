@@ -1,4 +1,4 @@
-param([string]$Version = '0.1.1', [int]$VersionCode = 1001)
+param([string]$Version = '0.1.2', [int]$VersionCode = 1002)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $signingDir = Join-Path $projectRoot 'work/signing'

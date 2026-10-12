@@ -64,6 +64,12 @@ Check(InstallerPackage.Select(installerRelease,"owner/repo") == installerAsset, 
 Check(InstallerPackage.Select(installerRelease with { Assets = [installerAsset with { Digest = null }] },"owner/repo") is null, "update rejects installer without digest");
 Check(InstallerPackage.Select(installerRelease with { Assets = [installerAsset with { Url = "https://example.com/setup.exe" }] },"owner/repo") is null, "update rejects foreign installer URL");
 Check(!InstallerPackage.IsDownloadUrl(new Uri("http://github.com/file")) && !InstallerPackage.IsDownloadUrl(new Uri("https://github.com.evil.example/file")), "installer redirects require exact trusted HTTPS hosts");
+Check(TrayCountdown.Label(TimeSpan.FromSeconds(-1)) == "0с", "tray countdown never displays negative time");
+Check(TrayCountdown.Label(TimeSpan.FromSeconds(59.1)) == "1", "tray countdown rounds up at minute boundary");
+Check(TrayCountdown.Label(TimeSpan.FromSeconds(59)) == "59с", "tray shows seconds during last minute");
+Check(TrayCountdown.Label(TimeSpan.FromMinutes(99)) == "99", "tray fits two digit minutes");
+Check(TrayCountdown.Label(TimeSpan.FromMinutes(100)) == "2ч", "tray shows compact hours for long timers");
+Check(TrayCountdown.Label(TimeSpan.FromHours(24)) == "24ч", "tray supports maximum timer duration");
 Console.WriteLine($"{passed} checks passed; no real OS actions.");
 
 sealed class Store : IStateStore

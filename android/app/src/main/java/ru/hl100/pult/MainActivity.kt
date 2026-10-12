@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf<Status?>(null)
     private var connected by mutableStateOf(false)
     private var busy by mutableStateOf(false)
+    private var sending by mutableStateOf(emptySet<String>())
     private var volumeWrites by mutableIntStateOf(0)
     private var message by mutableStateOf("")
     private var tab by mutableStateOf("remote")
@@ -109,6 +110,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     private fun applyStatus(result: Status) {
+        if (result.error != null && result.error != status?.error) message = result.error
         status = result; connected = true
         result.volume?.let { settings.lastVolume = it }
         settings.widgetMessage = "Последний ответ: ПК доступен"; Widgets.refresh(this)
@@ -129,7 +131,8 @@ class MainActivity : ComponentActivity() {
     }
     private fun task(block: suspend () -> Unit) {
         if (busy) return
-        lifecycleScope.launch { busy = true; try { block() } catch (ex: Exception) { message = readable(ex) } finally { busy = false } }
+        busy = true
+        lifecycleScope.launch { try { block() } catch (ex: Exception) { message = readable(ex) } finally { busy = false } }
     }
     private fun readable(ex: Exception): String = when(ex) {
         is ApiException -> ex.message ?: "Команда не выполнена."
@@ -140,10 +143,21 @@ class MainActivity : ComponentActivity() {
     }
     private fun send(action: String, value: Int? = null, timerAction: String? = null, seconds: Int? = null, replace: Boolean = false) {
         val selected = connection ?: return
-        task {
-            commandMutex.withLock { withContext(Dispatchers.IO) { PultApi.command(selected, action, value, timerAction, seconds, replace) } }
-            message = when(action) { "timer" -> "${timerActionName(timerAction ?: "")} через ${(seconds ?: 0)/60} мин. Таймер запущен на ПК."; "cancelTimer" -> "Таймер отменён."; "lock" -> "Команда блокировки принята."; "playPause" -> "Команда плей / пауза принята."; "shutdown", "restart" -> "Команда принята агентом."; else -> "Громкость изменена." }
-            refreshStatus()
+        if (action in sending) return
+        sending = sending + action
+        lifecycleScope.launch {
+            try {
+            commandMutex.withLock {
+                withContext(Dispatchers.IO) { PultApi.command(selected, action, value, timerAction, seconds, replace) }
+                // Power commands can disconnect the PC immediately after acceptance.
+                if (action !in setOf("shutdown", "restart")) {
+                    val result = withContext(Dispatchers.IO) { PultApi.status(selected) }
+                    if (connection == selected) applyStatus(result)
+                }
+            }
+            if (action != "playPause") message = when(action) { "timer" -> "${timerActionName(timerAction ?: "")} через ${(seconds ?: 0)/60} мин. Таймер запущен на ПК."; "cancelTimer" -> "Таймер отменён."; "lock" -> "Команда блокировки принята."; "shutdown", "restart" -> "Команда принята агентом."; else -> "Громкость изменена." }
+            } catch (ex: Exception) { message = readable(ex) }
+            finally { sending = sending - action }
         }
     }
     @Composable private fun AppScreen() {
@@ -152,6 +166,15 @@ class MainActivity : ComponentActivity() {
         val colorScheme = if(theme == "quiet") lightColorScheme(primary=p.accent,onPrimary=p.accentInk,background=p.base,onBackground=p.ink,surface=p.surface,onSurface=p.ink,outline=p.line) else darkColorScheme(primary=p.accent,onPrimary=p.accentInk,background=p.base,onBackground=p.ink,surface=p.surface,onSurface=p.ink,outline=p.line)
         val family = if(theme == "signal") FontFamily.Monospace else FontFamily.SansSerif
         MaterialTheme(colorScheme=colorScheme, typography=Typography(bodyLarge=LocalTextStyle.current.copy(fontFamily=family,fontSize=15.sp),bodyMedium=LocalTextStyle.current.copy(fontFamily=family,fontSize=13.sp),titleLarge=LocalTextStyle.current.copy(fontFamily=family,fontSize=24.sp,fontWeight=FontWeight.Medium))) {
+            val notices = remember { SnackbarHostState() }
+            LaunchedEffect(message) {
+                val notice = message
+                if (notice.isNotBlank()) {
+                    notices.showSnackbar(notice, withDismissAction = true, duration = SnackbarDuration.Short)
+                    if (message == notice) message = ""
+                }
+            }
+            Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().background(p.base).safeDrawingPadding()) {
                 Row(Modifier.fillMaxWidth().padding(22.dp,18.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
                     Text(if(theme=="signal") "Пульт_" else "Пульт",fontSize=32.sp,fontWeight=FontWeight.SemiBold,fontFamily=family,color=p.ink)
@@ -161,11 +184,6 @@ class MainActivity : ComponentActivity() {
                     DeviceCard(p)
                     Spacer(Modifier.height(20.dp))
                     when(tab) { "remote" -> RemoteScreen(p); "timer" -> TimerScreen(p); else -> SettingsScreen(p) }
-                    if(message.isNotBlank()) {
-                        Surface(color=p.surface,shape=RoundedCornerShape(p.radius.dp),modifier=Modifier.fillMaxWidth().padding(top=18.dp)) {
-                            Row(Modifier.padding(13.dp),verticalAlignment=Alignment.CenterVertically) { Text(message,color=p.ink,fontSize=12.sp,modifier=Modifier.weight(1f)); TextButton(onClick={message=""}) { Text("×",color=p.sub) } }
-                        }
-                    }
                     Spacer(Modifier.height(24.dp))
                 }
                 HorizontalDivider(color=p.line)
@@ -174,6 +192,10 @@ class MainActivity : ComponentActivity() {
                         TextButton(onClick={tab=key},modifier=Modifier.weight(1f)) { Column(horizontalAlignment=Alignment.CenterHorizontally) { Symbol(if(key=="remote")"power" else key,if(tab==key)p.ink else p.sub,20); Spacer(Modifier.height(5.dp)); Text(label,fontSize=11.sp,color=if(tab==key)p.ink else p.sub) } }
                     }
                 }
+            }
+            SnackbarHost(notices, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start=16.dp,end=16.dp,bottom=88.dp)) {
+                Snackbar(it, containerColor=p.surface, contentColor=p.ink, dismissActionContentColor=p.sub)
+            }
             }
             if(confirming != null) {
                 val action=confirming!!
@@ -205,7 +227,6 @@ class MainActivity : ComponentActivity() {
         OutlinedButton(onClick={confirming="restart"},enabled=connected&&!busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp),shape=RoundedCornerShape(p.radius.dp)) { Symbol("restart",p.ink,19); Spacer(Modifier.width(10.dp)); Text("Перезагрузить",fontSize=13.sp,color=p.ink) }
         Spacer(Modifier.height(24.dp)); Label("ТАЙМЕР / 02",p); ActiveTimer(p)
         Spacer(Modifier.height(24.dp)); Sound(p)
-        status?.error?.let { Text(it,color=p.sub,fontSize=12.sp,modifier=Modifier.padding(top=14.dp)) }
     }
     @Composable private fun ActionTile(label:String,kind:String,p:Palette,primary:Boolean,modifier:Modifier,click:()->Unit) {
         Button(onClick=click,enabled=connected&&!busy,modifier=modifier.height(110.dp),shape=RoundedCornerShape(p.radius.dp),contentPadding=PaddingValues(16.dp),colors=ButtonDefaults.buttonColors(containerColor=if(primary)p.accent else p.surface,contentColor=if(primary)p.accentInk else p.ink)) {
@@ -218,10 +239,9 @@ class MainActivity : ComponentActivity() {
         val timer=status?.timer
         val remaining=timer?.let { runCatching { max(0,(OffsetDateTime.parse(it.dueAt).toInstant().toEpochMilli()-now)/1000) }.getOrDefault(0) }
         Row(Modifier.fillMaxWidth().border(1.dp,p.line,RoundedCornerShape(p.radius.dp)).padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
-            Column(Modifier.weight(1f)) { Text(if(timer==null)"Активных таймеров нет" else when(timer.action){"lock"->"Блокировка через";"restart"->"Перезагрузка через";else->"Выключение через"},fontSize=11.sp,color=p.sub); Spacer(Modifier.height(7.dp)); Text(if(remaining==null)"—" else "%02d:%02d".format(remaining/60,remaining%60),fontSize=29.sp,color=p.ink) }
+            Column(Modifier.weight(1f)) { Text(if(timer==null)"Активных таймеров нет" else if(!connected)"Последний таймер · нет связи" else when(timer.action){"lock"->"Блокировка через";"restart"->"Перезагрузка через";else->"Выключение через"},fontSize=11.sp,color=p.sub,maxLines=1); Spacer(Modifier.height(7.dp)); Text(if(remaining==null)"—" else "%02d:%02d".format(remaining/60,remaining%60),fontSize=29.sp,color=p.ink,maxLines=1) }
             TextButton(enabled=connected&&!busy,onClick={if(timer==null)tab="timer" else send("cancelTimer")}){Text(if(timer==null)"Задать" else "Отменить",color=p.ink,fontSize=12.sp)}
         }
-        if(!connected && timer!=null) Text("Последнее известное состояние. Нет связи с ПК.",fontSize=11.sp,color=p.sub,modifier=Modifier.padding(top=7.dp))
     }
     @Composable private fun Sound(p:Palette) {
         var volume by remember { mutableFloatStateOf((status?.volume ?: settings.lastVolume).toFloat()) }

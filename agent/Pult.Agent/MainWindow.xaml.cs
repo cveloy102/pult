@@ -24,8 +24,8 @@ public partial class MainWindow : System.Windows.Window
     private DateTimeOffset nextUpdateCheck = DateTimeOffset.UtcNow;
     private readonly System.Windows.Forms.ToolStripMenuItem timerMenu;
     private readonly System.Windows.Forms.ToolStripMenuItem cancelTimerMenu;
-    private TimerWindow? timerWindow;
-    private string? shownTimerId;
+    private System.Drawing.Icon? countdownIcon;
+    private string? countdownIconKey;
     private TextBlock? timerHistory;
     private bool checkingUpdate;
     public MainWindow(AgentHost host, bool demo)
@@ -38,13 +38,13 @@ public partial class MainWindow : System.Windows.Window
         tray = new System.Windows.Forms.NotifyIcon { Text = demo ? "Пульт · демо" : "Пульт", Icon = trayIcon, Visible = true };
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("Открыть Пульт", null, (_, _) => Dispatcher.Invoke(ShowWindow));
-        timerMenu = new System.Windows.Forms.ToolStripMenuItem("Нет активного таймера", null, (_, _) => Dispatcher.Invoke(() => timerWindow?.Show()));
+        timerMenu = new System.Windows.Forms.ToolStripMenuItem("Нет активного таймера", null, (_, _) => Dispatcher.Invoke(() => { ShowWindow(); RenderOverview(); }));
         cancelTimerMenu = new System.Windows.Forms.ToolStripMenuItem("Отменить таймер", null, (_, _) => Dispatcher.Invoke(CancelActiveTimer));
         menu.Items.Add(timerMenu); menu.Items.Add(cancelTimerMenu);
         menu.Items.Add("Подключить телефон", null, (_, _) => Dispatcher.Invoke(() => { ShowWindow(); PairPage(); }));
         menu.Items.Add("Проверить обновления", null, (_, _) => Dispatcher.Invoke(() => UpdateClick(this, new RoutedEventArgs())));
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        menu.Items.Add("Завершить агент", null, async (_, _) => { tray.Visible = false; refresh.Stop(); tray.Dispose(); trayIcon.Dispose(); await ((App)System.Windows.Application.Current).ExitAsync(); });
+        menu.Items.Add("Завершить агент", null, async (_, _) => { tray.Visible = false; refresh.Stop(); tray.Dispose(); countdownIcon?.Dispose(); trayIcon.Dispose(); await ((App)System.Windows.Application.Current).ExitAsync(); });
         tray.ContextMenuStrip = menu; tray.DoubleClick += (_, _) => Dispatcher.Invoke(ShowWindow);
         refresh.Tick += (_, _) => Refresh(); refresh.Start();
         Closing += (_, e) => { e.Cancel = true; Hide(); };
@@ -59,13 +59,14 @@ public partial class MainWindow : System.Windows.Window
         timerMenu.Enabled = cancelTimerMenu.Enabled = job is not null;
         timerMenu.Text = job is null ? "Нет активного таймера" : $"{ActionName(job.Action)} · {FormatRemaining(job.DueAt)}";
         tray.Text = job is null ? "Пульт" : $"Пульт · {ActionName(job.Action)} {FormatRemaining(job.DueAt)}";
-        if(job is not null)
+        var badge = job is null ? null : TrayCountdown.Label(job.DueAt - DateTimeOffset.UtcNow);
+        var iconKey = job is null ? null : job.Action + ":" + badge;
+        if (iconKey != countdownIconKey)
         {
-            timerWindow ??= new TimerWindow(CancelActiveTimer, Icon);
-            timerWindow.Update(job, ActionName(job.Action), FormatRemaining(job.DueAt), FontFamily);
-            if(shownTimerId != job.Id) { shownTimerId = job.Id; timerWindow.Show(); }
+            var next = job is null ? null : TimerTrayIcon.Create(trayIcon, badge!, job.Action);
+            tray.Icon = next ?? trayIcon;
+            countdownIcon?.Dispose(); countdownIcon = next; countdownIconKey = iconKey;
         }
-        else { shownTimerId = null; timerWindow?.Hide(); }
         if(timerHistory is not null)
         {
             timerHistory.Text = string.Join("\n", host.Service.TimerHistory.Take(6).Select(item => $"{item.Time.LocalDateTime:dd.MM HH:mm:ss} · {ActionName(item.Action)} · {TimerEventName(item.Event)}"));

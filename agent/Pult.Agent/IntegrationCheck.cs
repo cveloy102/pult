@@ -15,6 +15,17 @@ internal static class IntegrationCheck
         using var http = new HttpClient(handler) { BaseAddress = new Uri("https://127.0.0.1:47599"), Timeout = TimeSpan.FromSeconds(10) };
         var checks = new List<string>();
         void Check(bool condition, string label) { if (!condition) throw new InvalidOperationException(label); checks.Add(label); }
+        using (var iconStream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/pult.ico")).Stream)
+        using (var original = new System.Drawing.Icon(iconStream, 32, 32))
+        {
+            foreach (var label in new[] { "30", "59с", "24ч" })
+            {
+                using var countdown = TimerTrayIcon.Create(original, label, "shutdown");
+                using var bitmap = countdown.ToBitmap();
+                Check(bitmap.Width == 32 && bitmap.Height == 32 && bitmap.GetPixel(31, 0).A == 0, $"tray icon {label} renders with transparent border");
+                bitmap.Save(Path.Combine(directory, $"tray-{label}.png"), System.Drawing.Imaging.ImageFormat.Png);
+            }
+        }
         var unauthorized = await http.GetAsync("/api/status"); Check(unauthorized.StatusCode == HttpStatusCode.Unauthorized, "status requires token");
         var info = await http.GetFromJsonAsync<AgentInfo>("/api/info", Protocol.Json); Check(info?.Fingerprint == host.Fingerprint, "HTTPS identity");
         var (code, _) = host.Service.BeginPairing();
