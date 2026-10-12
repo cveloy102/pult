@@ -15,6 +15,8 @@ public partial class MainWindow : System.Windows.Window
     private readonly AgentHost host;
     private readonly bool demo;
     private readonly System.Windows.Forms.NotifyIcon tray;
+    private readonly System.Drawing.Icon trayIcon;
+    private bool demoStartup;
     private readonly DispatcherTimer refresh;
     private TextBlock? timerText;
     private TextBlock? codeText;
@@ -25,13 +27,15 @@ public partial class MainWindow : System.Windows.Window
         this.host = host; this.demo = demo; InitializeComponent(); ApplyTheme(host.Service.State.Theme);
         VersionLabel.Text = $"{AgentHost.Version} · работает в трее";
         refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-        tray = new System.Windows.Forms.NotifyIcon { Text = demo ? "Пульт · демо" : "Пульт", Icon = System.Drawing.SystemIcons.Application, Visible = true };
+        using (var iconStream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/pult.ico")).Stream)
+        using (var sourceIcon = new System.Drawing.Icon(iconStream)) trayIcon = new System.Drawing.Icon(sourceIcon, 32, 32);
+        tray = new System.Windows.Forms.NotifyIcon { Text = demo ? "Пульт · демо" : "Пульт", Icon = trayIcon, Visible = true };
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("Открыть Пульт", null, (_, _) => Dispatcher.Invoke(ShowWindow));
         menu.Items.Add("Подключить телефон", null, (_, _) => Dispatcher.Invoke(() => { ShowWindow(); PairPage(); }));
         menu.Items.Add("Проверить обновления", null, (_, _) => Dispatcher.Invoke(() => UpdateClick(this, new RoutedEventArgs())));
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
-        menu.Items.Add("Завершить агент", null, async (_, _) => { tray.Visible = false; refresh.Stop(); tray.Dispose(); await ((App)System.Windows.Application.Current).ExitAsync(); });
+        menu.Items.Add("Завершить агент", null, async (_, _) => { tray.Visible = false; refresh.Stop(); tray.Dispose(); trayIcon.Dispose(); await ((App)System.Windows.Application.Current).ExitAsync(); });
         tray.ContextMenuStrip = menu; tray.DoubleClick += (_, _) => Dispatcher.Invoke(ShowWindow);
         refresh.Tick += (_, _) => Refresh(); refresh.Start();
         Closing += (_, e) => { e.Cancel = true; Hide(); };
@@ -66,7 +70,7 @@ public partial class MainWindow : System.Windows.Window
         var button = new Button { Content = label, Margin = new Thickness(0, 8, 0, 7), HorizontalContentAlignment = HorizontalAlignment.Center };
         if (primary) button.Style = (Style)FindResource("Primary"); button.Click += (_, _) => { try { action(); } catch (Exception ex) { Notice.Text = ex.Message; } }; return button;
     }
-    private void Clear(string name) { Page.Children.Clear(); timerText = null; codeText = null; Notice.Text = ""; }
+    private void Clear(string name) { Page.Children.Clear(); PageScroll.ScrollToTop(); timerText = null; codeText = null; Notice.Text = ""; }
     private void Row(string label, TextBlock value)
     {
         var grid = new Grid { Margin = new Thickness(0, 9, 0, 9) }; grid.ColumnDefinitions.Add(new()); grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Auto) });
@@ -120,7 +124,17 @@ public partial class MainWindow : System.Windows.Window
         Page.Children.Add(themes);
         var updates = new CheckBox { Content = "Проверять обновления", IsChecked = host.Service.State.CheckUpdates }; Page.Children.Add(updates);
         var startup = new CheckBox { Content = "Запускать вместе с Windows", IsChecked = IsStartupEnabled() }; Page.Children.Add(startup);
-        Page.Children.Add(Button("Сохранить настройки", () => { host.Service.SaveSettings(name.Text, host.Service.State.Theme, updates.IsChecked == true); SetStartup(startup.IsChecked == true); Notice.Text = "Настройки сохранены."; }, true));
+        updates.Click += (_, _) =>
+        {
+            try { host.Service.SaveSettings(host.Service.State.Name, host.Service.State.Theme, updates.IsChecked == true); Notice.Text = "Проверка обновлений настроена."; }
+            catch (Exception ex) { updates.IsChecked = host.Service.State.CheckUpdates; Notice.Text = $"Не удалось сохранить настройку: {ex.Message}"; }
+        };
+        startup.Click += (_, _) =>
+        {
+            try { SetStartup(startup.IsChecked == true); Notice.Text = startup.IsChecked == true ? "Автозапуск включён." : "Автозапуск выключен."; }
+            catch (Exception ex) { startup.IsChecked = IsStartupEnabled(); Notice.Text = $"Не удалось изменить автозапуск: {ex.Message}"; }
+        };
+        Page.Children.Add(Button("Сохранить имя компьютера", () => { host.Service.SaveSettings(name.Text, host.Service.State.Theme, updates.IsChecked == true); Notice.Text = "Имя компьютера сохранено."; }, true));
         Page.Children.Add(Text("Закрытие окна сворачивает Пульт в трей. Для завершения используй меню значка в трее.", 12, true));
     }
     private void ApplyTheme(string theme)
@@ -136,9 +150,10 @@ public partial class MainWindow : System.Windows.Window
         System.Windows.Application.Current.Resources["Radius"] = new CornerRadius(theme == "signal" ? 3 : 18);
         FontFamily = new FontFamily(theme == "signal" ? "Consolas" : "Segoe UI");
     }
-    private static bool IsStartupEnabled() { using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"); return key?.GetValue("Pult") is string; }
-    private static void SetStartup(bool enabled)
+    private bool IsStartupEnabled() { if (demo) return demoStartup; using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run"); return key?.GetValue("Pult") is string; }
+    private void SetStartup(bool enabled)
     {
+        if (demo) { demoStartup = enabled; return; }
         using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
         if (enabled) key.SetValue("Pult", $"\"{Environment.ProcessPath}\" --tray"); else key.DeleteValue("Pult", false);
     }

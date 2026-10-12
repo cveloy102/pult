@@ -1,9 +1,12 @@
-<Window x:Class="Pult.Agent.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Пульт · агент Windows" Width="590" Height="690" MinWidth="500" MinHeight="600" WindowStartupLocation="CenterScreen" Background="{DynamicResource Base}" Foreground="{DynamicResource Ink}">
+<Window x:Class="Pult.Agent.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Пульт · агент Windows" Icon="Assets/pult.ico" Width="640" Height="780" MinWidth="500" MinHeight="600" WindowStartupLocation="CenterScreen" Background="{DynamicResource Base}" Foreground="{DynamicResource Ink}">
   <Grid Margin="28">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <Grid><StackPanel><TextBlock Text="ЛОКАЛЬНОЕ УПРАВЛЕНИЕ / WINDOWS" Foreground="{DynamicResource Sub}" FontSize="10" Margin="0,0,0,9"/><TextBlock Text="Пульт_" FontSize="36" FontWeight="SemiBold"/></StackPanel><TextBlock x:Name="RunningLabel" HorizontalAlignment="Right" VerticalAlignment="Bottom" Foreground="{DynamicResource Accent}" FontSize="12" Margin="0,0,0,9"/></Grid>
     <UniformGrid Grid.Row="1" Columns="3" Margin="0,25,0,24"><Button Content="Обзор" Click="OverviewClick" Margin="0,0,6,0"/><Button Content="Телефоны" Click="PhonesClick" Margin="3,0"/><Button Content="Настройки" Click="SettingsClick" Margin="6,0,0,0"/></UniformGrid>
-    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"><StackPanel x:Name="Page"/></ScrollViewer>
+    <ScrollViewer x:Name="PageScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+      <ScrollViewer.Resources><Style TargetType="ScrollBar" BasedOn="{StaticResource PultScrollBar}"/></ScrollViewer.Resources>
+      <StackPanel x:Name="Page" Margin="0,0,10,0"/>
+    </ScrollViewer>
     <Grid Grid.Row="3" Margin="0,20,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><TextBlock x:Name="Notice" Foreground="{DynamicResource Sub}" TextWrapping="Wrap" FontSize="12" Margin="0,0,0,15"/><Grid Grid.Row="1"><TextBlock x:Name="VersionLabel" Foreground="{DynamicResource Sub}" FontSize="11" VerticalAlignment="Center"/><Button Content="Обновления ↗" HorizontalAlignment="Right" Click="UpdateClick" Padding="12,8"/></Grid></Grid>
   </Grid>
 </Window>
