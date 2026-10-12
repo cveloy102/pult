@@ -43,8 +43,11 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.OffsetDateTime
 import kotlin.math.max
+import androidx.compose.ui.text.style.TextAlign
 
 data class Palette(val base: Color, val surface: Color, val ink: Color, val sub: Color, val line: Color, val accent: Color, val accentInk: Color, val radius: Int)
+data class TimerPlan(val action: String, val seconds: Int, val replace: Boolean)
+fun timerActionName(action: String) = when(action) { "shutdown" -> "Выключение"; "restart" -> "Перезагрузка"; "lock" -> "Блокировка"; else -> "Неизвестное действие" }
 fun palette(theme: String): Palette = when (theme) {
     "quiet" -> Palette(Color(0xFFF6F3EC), Color(0xFFEBE7DF), Color(0xFF272C29), Color(0xFF626B63), Color(0xFFD8DCD3), Color(0xFF425749), Color(0xFFFFFDF6), 22)
     "orbit" -> Palette(Color(0xFF121724), Color(0xFF1C2433), Color(0xFFF1F4FB), Color(0xFFA7B4CC), Color(0xFF354259), Color(0xFFB5CEFF), Color(0xFF172642), 18)
@@ -58,6 +61,7 @@ class MainActivity : ComponentActivity() {
     private var status by mutableStateOf<Status?>(null)
     private var connected by mutableStateOf(false)
     private var busy by mutableStateOf(false)
+    private var volumeWrites by mutableIntStateOf(0)
     private var message by mutableStateOf("")
     private var tab by mutableStateOf("remote")
     private var confirming by mutableStateOf<String?>(null)
@@ -95,14 +99,32 @@ class MainActivity : ComponentActivity() {
     private suspend fun refreshStatus() {
         val selected = connection ?: return
         try {
-            val result = withContext(Dispatchers.IO) { PultApi.status(selected) }
-            if (connection != selected) return
-            status = result; connected = true
-            result.volume?.let { settings.lastVolume = it }
-            settings.widgetMessage = "Последний ответ: ПК доступен"; Widgets.refresh(this)
+            commandMutex.withLock {
+                val result = withContext(Dispatchers.IO) { PultApi.status(selected) }
+                if (connection == selected) applyStatus(result)
+            }
         } catch (ex: Exception) {
             if (connection != selected) return
             connected = false; settings.widgetMessage = if (ex is ApiException && ex.status == 401) "Доступ отозван" else "Нет связи с ПК"; Widgets.refresh(this)
+        }
+    }
+    private fun applyStatus(result: Status) {
+        status = result; connected = true
+        result.volume?.let { settings.lastVolume = it }
+        settings.widgetMessage = "Последний ответ: ПК доступен"; Widgets.refresh(this)
+    }
+    private fun setVolume(value: Int) {
+        val selected = connection ?: return
+        volumeWrites++
+        lifecycleScope.launch {
+            try {
+                commandMutex.withLock {
+                    withContext(Dispatchers.IO) { PultApi.command(selected, "volume", value) }
+                    val result = withContext(Dispatchers.IO) { PultApi.status(selected) }
+                    if(connection == selected) applyStatus(result)
+                }
+            } catch(ex: Exception) { message = readable(ex) }
+            finally { volumeWrites-- }
         }
     }
     private fun task(block: suspend () -> Unit) {
@@ -120,7 +142,7 @@ class MainActivity : ComponentActivity() {
         val selected = connection ?: return
         task {
             commandMutex.withLock { withContext(Dispatchers.IO) { PultApi.command(selected, action, value, timerAction, seconds, replace) } }
-            message = when(action) { "timer" -> "Таймер запущен на ПК."; "cancelTimer" -> "Таймер отменён."; "lock" -> "Команда блокировки принята."; "playPause" -> "Команда плей / пауза принята."; "shutdown", "restart" -> "Команда принята агентом."; else -> "Громкость изменена." }
+            message = when(action) { "timer" -> "${timerActionName(timerAction ?: "")} через ${(seconds ?: 0)/60} мин. Таймер запущен на ПК."; "cancelTimer" -> "Таймер отменён."; "lock" -> "Команда блокировки принята."; "playPause" -> "Команда плей / пауза принята."; "shutdown", "restart" -> "Команда принята агентом."; else -> "Громкость изменена." }
             refreshStatus()
         }
     }
@@ -204,22 +226,22 @@ class MainActivity : ComponentActivity() {
     @Composable private fun Sound(p:Palette) {
         var volume by remember { mutableFloatStateOf((status?.volume ?: settings.lastVolume).toFloat()) }
         var dragging by remember { mutableStateOf(false) }
-        LaunchedEffect(status?.volume) { if(!dragging)volume=(status?.volume ?: settings.lastVolume).toFloat() }
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("Громкость",fontSize=13.sp,color=p.ink);Text(if(status?.volume==null)"Недоступна" else "${volume.toInt()}%",fontSize=13.sp,color=p.sub)}
-        Row(verticalAlignment=Alignment.CenterVertically){Symbol("volume",p.sub,22);Slider(value=volume,onValueChange={dragging=true;volume=it},onValueChangeFinished={dragging=false;send("volume",volume.toInt())},valueRange=0f..100f,enabled=connected&&!busy&&status?.volume!=null,modifier=Modifier.weight(1f).padding(horizontal=12.dp));OutlinedButton(onClick={send("playPause")},enabled=connected&&!busy,contentPadding=PaddingValues(12.dp),shape=RoundedCornerShape(p.radius.dp),modifier=Modifier.size(52.dp)){Text("▶Ⅱ",fontSize=16.sp,color=p.ink)}}
+        LaunchedEffect(status?.volume, volumeWrites) { if(!dragging && volumeWrites==0)volume=(status?.volume ?: settings.lastVolume).toFloat() }
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("Громкость",fontSize=13.sp,color=p.ink);Text(if(status?.volume==null)"Недоступна" else "${volume.toInt()}%",fontSize=13.sp,color=p.sub,modifier=Modifier.width(90.dp),textAlign=TextAlign.End)}
+        Row(verticalAlignment=Alignment.CenterVertically){Symbol("volume",p.sub,22);Slider(value=volume,onValueChange={dragging=true;volume=it},onValueChangeFinished={dragging=false;setVolume(volume.toInt())},valueRange=0f..100f,enabled=connected&&!busy&&status?.volume!=null,modifier=Modifier.weight(1f).padding(horizontal=12.dp));OutlinedButton(onClick={send("playPause")},enabled=connected&&!busy,contentPadding=PaddingValues(12.dp),shape=RoundedCornerShape(p.radius.dp),modifier=Modifier.size(52.dp)){Text("▶Ⅱ",fontSize=16.sp,color=p.ink)}}
         Text("Плей / пауза — системная медиаклавиша",fontSize=10.sp,color=p.sub)
     }
     @Composable private fun TimerScreen(p:Palette) {
         var minutes by rememberSaveable { mutableStateOf("30") }
-        var action by remember { mutableStateOf("shutdown") }
-        var replaceOpen by remember { mutableStateOf(false) }
+        var action by rememberSaveable { mutableStateOf("shutdown") }
+        var pending by remember { mutableStateOf<TimerPlan?>(null) }
         Text("Таймер",fontSize=27.sp,color=p.ink); Spacer(Modifier.height(18.dp)); Label("ДЕЙСТВИЕ",p)
         listOf("shutdown" to "Выключить", "restart" to "Перезагрузить", "lock" to "Заблокировать").forEach { (key,label) -> Row(Modifier.fillMaxWidth().clickable { action=key }.padding(vertical=2.dp),verticalAlignment=Alignment.CenterVertically){RadioButton(selected=action==key,onClick={action=key});Text(label,color=p.ink)} }
         OutlinedTextField(value=minutes,onValueChange={minutes=it.filter(Char::isDigit).take(4)},label={Text("Через сколько минут")},keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),singleLine=true,modifier=Modifier.fillMaxWidth().padding(vertical=15.dp))
         Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){listOf(15,30,60).forEach{value->OutlinedButton(onClick={minutes=value.toString()},modifier=Modifier.weight(1f),shape=RoundedCornerShape(p.radius.dp)){Text(if(value==60)"1 час" else "$value мин",fontSize=12.sp,color=p.ink)}}}
-        Spacer(Modifier.height(15.dp));Primary("Запустить таймер",p,connected&&!busy){val value=minutes.toIntOrNull();if(value==null||value !in 1..1440)message="Укажи от 1 до 1440 минут." else if(status?.timer!=null)replaceOpen=true else send("timer",timerAction=action,seconds=value*60)}
+        Spacer(Modifier.height(15.dp));Primary("Запустить таймер",p,connected&&!busy){val value=minutes.toIntOrNull();if(value==null||value !in 1..1440)message="Укажи от 1 до 1440 минут." else pending=TimerPlan(action,value*60,status?.timer!=null)}
         Text("Таймер работает на ПК. Приложение можно закрыть. После пропущенного срока во сне ПК команда отменяется.",fontSize=12.sp,color=p.sub,modifier=Modifier.padding(vertical=18.dp));ActiveTimer(p)
-        if(replaceOpen)AlertDialog(onDismissRequest={replaceOpen=false},title={Text("Заменить таймер?")},text={Text("Текущий таймер будет отменён, новый начнётся сейчас.")},confirmButton={TextButton(onClick={replaceOpen=false;send("timer",timerAction=action,seconds=minutes.toInt()*60,replace=true)}){Text("Заменить")}},dismissButton={TextButton(onClick={replaceOpen=false}){Text("Отмена")}})
+        pending?.let { plan -> AlertDialog(onDismissRequest={pending=null},title={Text("${timerActionName(plan.action)} через ${plan.seconds/60} мин?")},text={Text(if(plan.replace)"Текущий таймер будет отменён и заменён этим. Новый отсчёт начнётся на ПК." else "Таймер будет работать на ПК. Его можно отменить с телефона, в окне агента или через трей.")},confirmButton={TextButton(enabled=!busy,onClick={pending=null;send("timer",timerAction=plan.action,seconds=plan.seconds,replace=plan.replace)}){Text(if(plan.replace)"Заменить таймер" else "Запустить")}},dismissButton={TextButton(onClick={pending=null}){Text("Отмена")}}) }
     }
     @Composable private fun SettingsScreen(p:Palette) {
         var address by remember { mutableStateOf(connection?.address ?: "") }

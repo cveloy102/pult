@@ -18,6 +18,7 @@ public static class Protocol
 
 public sealed record Phone(string Id, string Name, string TokenHash, DateTimeOffset PairedAt);
 public sealed record TimerJob(string Id, string Action, DateTimeOffset DueAt);
+public sealed record TimerEvent(DateTimeOffset Time, string TimerId, string Action, string Event);
 public sealed record Receipt(string Id, string PhoneId, string PayloadHash, DateTimeOffset CreatedAt, string Status);
 public sealed record Command(string RequestId, string Action, int? Value = null, bool Replace = false, string? TimerAction = null, int? DurationSeconds = null);
 public sealed record AudioState(int Volume, bool Muted);
@@ -34,6 +35,7 @@ public sealed class AgentState
     public string ReleaseRepository { get; set; } = "cveloy102/pult";
     public bool CheckUpdates { get; set; } = true;
     public TimerJob? Timer { get; set; }
+    public List<TimerEvent> TimerEvents { get; set; } = [];
     public List<Phone> Phones { get; set; } = [];
     public List<Receipt> Receipts { get; set; } = [];
 }

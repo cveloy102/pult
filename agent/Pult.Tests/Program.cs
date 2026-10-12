@@ -39,6 +39,31 @@ Check(ReleaseClient.ParseVersion("android-v1.2.3", "agent") is null && ReleaseCl
 using var http = new HttpClient(new ReleaseHandler());
 var release = await new ReleaseClient(http).FindAsync("owner/repo", "android");
 Check(release?.Tag == "android-v1.4.0", "release pagination finds independent Android version");
+Check(PowerCommand.Arguments("shutdown").SequenceEqual(new[]{"/s", "/t", "0"}), "shutdown maps to /s, never /r or /f");
+Check(PowerCommand.Arguments("restart").SequenceEqual(new[]{"/r", "/t", "0"}), "restart maps to /r, never /s or /f");
+foreach(var timerAction in new[]{"shutdown", "restart", "lock"})
+{
+    var timerStore = new Store(); var timerComputer = new Computer(); var timerClock = new Clock();
+    var timerAgent = new AgentService(timerStore, timerComputer, timerClock);
+    var timerCode = timerAgent.BeginPairing().Code;
+    var timerPair = timerAgent.Pair(new(timerCode,"Timer phone"), "local", info); var timerPhone = timerAgent.Authenticate(timerPair.Token)!;
+    var json = $"{{\"requestId\":\"{Guid.NewGuid()}\",\"action\":\"timer\",\"timerAction\":\"{timerAction}\",\"durationSeconds\":10,\"replace\":false}}";
+    timerAgent.Execute(timerPhone, JsonSerializer.Deserialize<Command>(json, Protocol.Json)!);
+    Check(timerAgent.Status("test").Timer?.Action == timerAction, $"{timerAction}: Android wire format retains selected timer action");
+    timerAgent = new AgentService(timerStore, timerComputer, timerClock);
+    Check(timerAgent.Status("test").Timer?.Action == timerAction, $"{timerAction}: timer action survives agent restart");
+    timerClock.Advance(10); timerAgent.Tick(); timerAgent.Tick();
+    Check(timerComputer.Calls.SequenceEqual(new[]{timerAction}), $"{timerAction}: timer executes only selected action once");
+    Check(timerAgent.LastTimerEvent?.Action == timerAction && timerAgent.LastTimerEvent.Event == "dispatched", $"{timerAction}: persistent audit identifies dispatched action");
+}
+var installerName = "pult-agent-0.1.2-win-x64-setup.exe";
+var installerUrl = $"https://github.com/owner/repo/releases/download/agent-v0.1.2/{installerName}";
+var installerAsset = new ReleaseAsset(installerName, installerUrl, "sha256:" + new string('a',64));
+var installerRelease = new AvailableRelease("agent-v0.1.2", new Version(0,1,2), "", "", [installerAsset]);
+Check(InstallerPackage.Select(installerRelease,"owner/repo") == installerAsset, "update selects installer for exact component version and repository");
+Check(InstallerPackage.Select(installerRelease with { Assets = [installerAsset with { Digest = null }] },"owner/repo") is null, "update rejects installer without digest");
+Check(InstallerPackage.Select(installerRelease with { Assets = [installerAsset with { Url = "https://example.com/setup.exe" }] },"owner/repo") is null, "update rejects foreign installer URL");
+Check(!InstallerPackage.IsDownloadUrl(new Uri("http://github.com/file")) && !InstallerPackage.IsDownloadUrl(new Uri("https://github.com.evil.example/file")), "installer redirects require exact trusted HTTPS hosts");
 Console.WriteLine($"{passed} checks passed; no real OS actions.");
 
 sealed class Store : IStateStore

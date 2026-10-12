@@ -27,6 +27,15 @@ jobs:
           New-Item -ItemType Directory -Path release -Force | Out-Null
           Copy-Item docs/agent-start.txt artifacts/agent/README.txt
           Compress-Archive -Path artifacts/agent/* -DestinationPath "release/pult-agent-$env:PULT_VERSION-win-x64.zip"
+          $compilerPaths = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")
+          $compiler = $compilerPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$compiler) {
+            winget install --id JRSoftware.InnoSetup --exact --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity
+            $compiler = $compilerPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (!$compiler) { throw 'Inno Setup compiler is unavailable.' }
+          & $compiler "/DAppVersion=$env:PULT_VERSION" "/DSourceDir=$pwd/artifacts/agent" "/DOutputPath=$pwd/release" installer/pult.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
           @{ component='agent'; version=$env:PULT_VERSION; protocol=1; minimumWindows='10'; architecture='x64' } | ConvertTo-Json | Set-Content release/compatibility.json -Encoding utf8
           Get-ChildItem release -File | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" } | Set-Content release/SHA256SUMS.txt -Encoding utf8
       - name: Publish only Windows release

@@ -1,3 +1,4 @@
+param([string]$Version = '0.1.1', [int]$VersionCode = 1001)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $signingDir = Join-Path $projectRoot 'work/signing'
@@ -24,7 +25,7 @@ try {
     }
     Push-Location (Join-Path $projectRoot 'android')
     try {
-        & ./gradlew.bat --offline --no-daemon :app:assembleRelease :app:lintRelease '-PversionName=0.1.0' '-PversionCode=1000'
+        & ./gradlew.bat --offline --no-daemon :app:assembleRelease :app:lintRelease "-PversionName=$Version" "-PversionCode=$VersionCode"
         if ($LASTEXITCODE -ne 0) { throw 'Android build failed.' }
     } finally { Pop-Location }
 } finally {

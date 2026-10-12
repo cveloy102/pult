@@ -32,6 +32,15 @@ internal static class IntegrationCheck
         var conflict = await http.PostAsJsonAsync("/api/command", new Command(Guid.NewGuid().ToString(), "timer", TimerAction: "shutdown", DurationSeconds: 60)); Check(conflict.StatusCode == HttpStatusCode.Conflict, "timer replacement requires consent");
         var cancel = await http.PostAsJsonAsync("/api/command", new Command(Guid.NewGuid().ToString(), "cancelTimer")); cancel.EnsureSuccessStatusCode();
         Check(host.Service.Status(AgentHost.Version).Timer is null, "timer cancellation");
+        foreach(var action in new[]{"shutdown","restart","lock"})
+        {
+            var timerRequest = new Command(Guid.NewGuid().ToString(), "timer", TimerAction:action, DurationSeconds:120);
+            var actionResponse = await http.PostAsJsonAsync("/api/command", timerRequest); actionResponse.EnsureSuccessStatusCode();
+            var actionStatus = await http.GetFromJsonAsync<AgentStatus>("/api/status",Protocol.Json);
+            Check(actionStatus?.Timer?.Action == action, $"HTTPS timer preserves {action}");
+            var actionCancel = await http.PostAsJsonAsync("/api/command",new Command(Guid.NewGuid().ToString(),"cancelTimer")); actionCancel.EnsureSuccessStatusCode();
+            Check(host.Service.LastTimerEvent?.Action == action && host.Service.LastTimerEvent.Event == "cancelled", $"HTTPS cancellation audit for {action}");
+        }
         http.DefaultRequestHeaders.Add("Origin", "https://example.com"); var origin = await http.GetAsync("/api/status"); Check(origin.StatusCode == HttpStatusCode.Forbidden, "browser origins rejected"); http.DefaultRequestHeaders.Remove("Origin");
         host.Service.Revoke(pair.PhoneId); var revoked = await http.GetAsync("/api/status"); Check(revoked.StatusCode == HttpStatusCode.Unauthorized, "revoked phone rejected");
         Check(!AgentHost.IsLocal(IPAddress.Parse("8.8.8.8")) && AgentHost.IsLocal(IPAddress.Parse("192.168.1.2")), "LAN address boundary");

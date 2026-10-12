@@ -23,6 +23,7 @@ public sealed class AgentService
         // A persisted command may have run before an interrupted process could acknowledge it.
         if (State.Timer is { } job && job.DueAt <= lastTick)
         {
+            LogTimer(job, "skipped");
             State.Timer = null; LastError = "Пропущенный таймер отменён после запуска агента.";
         }
         foreach (var receipt in State.Receipts.Where(x => x.Status == "pending").ToArray())
@@ -75,7 +76,14 @@ public sealed class AgentService
 
     public Phone[] Phones { get { lock (gate) return State.Phones.ToArray(); } }
     public void Revoke(string id) { lock (gate) { State.Phones.RemoveAll(x => x.Id == id); store.Save(State); } }
-    public void CancelTimerLocal() { lock (gate) { State.Timer = null; store.Save(State); LastError = null; } }
+    public TimerEvent? LastTimerEvent { get { lock(gate) return State.TimerEvents.LastOrDefault(); } }
+    public TimerEvent[] TimerHistory { get { lock(gate) return State.TimerEvents.AsEnumerable().Reverse().ToArray(); } }
+    public void CancelTimerLocal() { lock (gate) { if(State.Timer is {} timer)LogTimer(timer, "cancelled"); State.Timer = null; store.Save(State); LastError = null; } }
+    private void LogTimer(TimerJob job, string action)
+    {
+        State.TimerEvents.Add(new(time.GetUtcNow(), job.Id, job.Action, action));
+        if(State.TimerEvents.Count > 30)State.TimerEvents.RemoveRange(0, State.TimerEvents.Count - 30);
+    }
     public void SaveSettings(string name, string theme, bool updates)
     {
         lock (gate)
@@ -120,8 +128,13 @@ public sealed class AgentService
             store.Save(State);
             try
             {
-                if (request.Action == "timer") State.Timer = new(Guid.NewGuid().ToString("N"), request.TimerAction!, time.GetUtcNow().AddSeconds(request.DurationSeconds!.Value));
-                else if (request.Action == "cancelTimer") State.Timer = null;
+                if (request.Action == "timer")
+                {
+                    if(State.Timer is {} previousTimer) LogTimer(previousTimer, "replaced");
+                    State.Timer = new(Guid.NewGuid().ToString("N"), request.TimerAction!, time.GetUtcNow().AddSeconds(request.DurationSeconds!.Value));
+                    LogTimer(State.Timer, "scheduled");
+                }
+                else if (request.Action == "cancelTimer") { if(State.Timer is {} cancelled)LogTimer(cancelled, "cancelled"); State.Timer = null; }
                 else computer.Execute(request.Action, request.Value);
                 ReplaceReceipt(receipt with { Status = "done" }); store.Save(State); LastError = null;
                 return new(true, false, "Команда принята.");
@@ -161,10 +174,11 @@ public sealed class AgentService
         {
             var now = time.GetUtcNow(); var gap = now - lastTick; lastTick = now;
             if (State.Timer is not { } job || job.DueAt > now) return;
-            State.Timer = null; store.Save(State);
-            if (gap > TimeSpan.FromSeconds(30)) { LastError = "Таймер пропущен во время сна или остановки агента и отменён."; return; }
+            State.Timer = null;
+            if (gap > TimeSpan.FromSeconds(30)) { LogTimer(job, "skipped"); store.Save(State); LastError = "Таймер пропущен во время сна или остановки агента и отменён."; return; }
+            LogTimer(job, "dispatched"); store.Save(State);
             try { computer.Execute(job.Action, null); LastError = null; }
-            catch (Exception ex) { LastError = $"Не удалось выполнить таймер: {ex.Message}"; }
+            catch (Exception ex) { LogTimer(job, "failed"); store.Save(State); LastError = $"Не удалось выполнить таймер: {ex.Message}"; }
         }
     }
     private void ReplaceReceipt(Receipt receipt)

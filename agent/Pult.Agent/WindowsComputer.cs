@@ -19,8 +19,9 @@ public sealed class WindowsComputer(bool demo) : IComputer
         {
             case "shutdown": case "restart":
                 // No /f: Windows is allowed to ask about unsaved documents.
-                using (var process = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "shutdown.exe"))
-                { ArgumentList = { action == "shutdown" ? "/s" : "/r", "/t", "0" }, CreateNoWindow = true, UseShellExecute = false }))
+                var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "shutdown.exe")) { CreateNoWindow = true, UseShellExecute = false };
+                foreach(var argument in PowerCommand.Arguments(action)) start.ArgumentList.Add(argument);
+                using (var process = Process.Start(start))
                 {
                     if (process is null || !process.WaitForExit(5000) || process.ExitCode != 0) throw new InvalidOperationException("Windows не приняла команду питания.");
                 }
