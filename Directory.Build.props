@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Version>0.1.0</Version>
+    <RepositoryUrl>https://github.com/cveloy102/pult</RepositoryUrl>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+</Project>
+

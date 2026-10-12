@@ -1,0 +1,12 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="14dp" android:background="@drawable/widget_signal">
+  <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Пульт" android:textColor="#EEEBDF" android:textSize="15sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end"/>
+  <TextView android:id="@+id/widget_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Открыть Пульт" android:textColor="#A4A29A" android:textSize="11sp" android:maxLines="1" android:ellipsize="end" android:layout_marginBottom="10dp"/>
+  <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal">
+    <Button android:id="@+id/widget_shutdown" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:minHeight="40dp" android:minWidth="0dp" android:text="⏻ Выключить" android:textAllCaps="false" android:textColor="#111111" android:textSize="13sp" android:background="@drawable/button_signal" android:layout_marginEnd="8dp"/>
+    <Button android:id="@+id/widget_lock" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:minHeight="40dp" android:minWidth="0dp" android:text="Блокировка" android:textAllCaps="false" android:textColor="#EEEBDF" android:textSize="13sp" android:background="@android:color/transparent"/>
+  </LinearLayout>
+  <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="horizontal" android:layout_marginTop="5dp">
+    <Button android:id="@+id/widget_minus" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:minHeight="40dp" android:minWidth="0dp" android:text="Громкость −" android:textAllCaps="false" android:textColor="#EEEBDF" android:textSize="12sp" android:background="@android:color/transparent"/>
+    <Button android:id="@+id/widget_plus" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:minHeight="40dp" android:minWidth="0dp" android:text="Громкость +" android:textAllCaps="false" android:textColor="#EEEBDF" android:textSize="12sp" android:background="@android:color/transparent"/>
+  </LinearLayout>
+</LinearLayout>

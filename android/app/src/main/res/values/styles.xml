@@ -1,0 +1,4 @@
+<resources>
+  <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar"><item name="android:fontFamily">sans</item><item name="android:windowLightStatusBar">false</item><item name="android:windowActionModeOverlay">true</item><item name="android:windowBackground">#101011</item><item name="android:colorAccent">#F04E48</item></style>
+  <style name="ConfirmTheme" parent="android:style/Theme.Material.Dialog.NoActionBar"><item name="android:windowIsTranslucent">true</item><item name="android:windowBackground">@android:color/transparent</item><item name="android:windowNoTitle">true</item><item name="android:backgroundDimEnabled">true</item></style>
+</resources>
