@@ -34,4 +34,3 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: gh release create $env:GITHUB_REF_NAME (Get-ChildItem release -File).FullName --title "Пульт Windows $env:PULT_VERSION" --generate-notes
-

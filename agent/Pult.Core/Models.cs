@@ -69,4 +69,3 @@ public sealed class RequestException(int status, string message) : Exception(mes
 {
     public int Status { get; } = status;
 }
-
