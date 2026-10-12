@@ -20,10 +20,10 @@ internal static class IntegrationCheck
         {
             foreach (var label in new[] { "30", "59с", "24ч" })
             {
-                using var countdown = TimerTrayIcon.Create(original, label, "shutdown");
+                using var countdown = TimerTrayIcon.Create(label, "shutdown");
                 using var bitmap = countdown.ToBitmap();
-                Check(bitmap.Width == 32 && bitmap.Height == 32 && bitmap.GetPixel(31, 0).A == 0, $"tray icon {label} renders with transparent border");
                 bitmap.Save(Path.Combine(directory, $"tray-{label}.png"), System.Drawing.Imaging.ImageFormat.Png);
+                Check(bitmap.Width == 32 && bitmap.Height == 32, $"tray icon {label} renders at full size");
             }
         }
         var unauthorized = await http.GetAsync("/api/status"); Check(unauthorized.StatusCode == HttpStatusCode.Unauthorized, "status requires token");

@@ -1,8 +1,8 @@
 #ifndef AppVersion
-  #define AppVersion "0.1.3"
+  #define AppVersion "0.1.4"
 #endif
 #ifndef SourceDir
-  #define SourceDir "..\artifacts\agent-0.1.3"
+  #define SourceDir "..\artifacts\agent-0.1.4"
 #endif
 #ifndef OutputPath
   #define OutputPath "..\artifacts"
@@ -47,16 +47,47 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 Name: "{userprograms}\Пульт"; Filename: "{app}\Pult.Agent.exe"; WorkingDir: "{app}"
 Name: "{userdesktop}\Пульт"; Filename: "{app}\Pult.Agent.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
-[Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Pult"; ValueData: """{app}\Pult.Agent.exe"" --tray"; Tasks: autostart; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "Pult"; Tasks: not autostart; Flags: deletevalue
-
 [Run]
 Filename: "{app}\Pult.Agent.exe"; Description: "Запустить Пульт"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{app}\Pult.Agent.exe"; Parameters: "--configure-startup off"; Flags: runhidden; RunOnceId: "RemovePultStartup"
 
 [Code]
 var
   AutostartRestored: Boolean;
+
+function ExistingAutostartEnabled(): Boolean;
+var
+  Schedule, Root, Task: Variant;
+begin
+  Result := RegValueExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Pult');
+  try
+    Schedule := CreateOleObject('Schedule.Service');
+    Schedule.Connect();
+    Root := Schedule.GetFolder('\');
+    Task := Root.GetTask('Pult Agent (' + GetUserNameString() + ')');
+    Result := Task.Enabled;
+  except
+    { First upgrade from Run registration has no scheduled task yet. }
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ExitCode: Integer;
+  Arguments: String;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if WizardIsTaskSelected('autostart') then Arguments := '--configure-startup on'
+    else Arguments := '--configure-startup off';
+    if not Exec(ExpandConstant('{app}\Pult.Agent.exe'), Arguments, ExpandConstant('{app}'), SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+      RaiseException('Не удалось настроить автозапуск Пульта.');
+    if ExitCode <> 0 then
+      RaiseException('Не удалось настроить автозапуск. Журнал: %LOCALAPPDATA%\Pult\startup-config-error.txt');
+  end;
+end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
@@ -66,7 +97,7 @@ begin
     AutostartRestored := True;
     if RegKeyExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{729A1FB9-7C28-4B2D-BAC0-0B306FC53662}_is1') then
     begin
-      if RegValueExists(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Pult') then
+      if ExistingAutostartEnabled() then
         WizardSelectTasks('autostart')
       else
         WizardSelectTasks('!autostart');

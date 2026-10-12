@@ -15,6 +15,23 @@ public partial class App : System.Windows.Application
         var testing = args.Contains("--integration-test");
         var demo = args.Contains("--demo");
         Directory.CreateDirectory(directory);
+        if (args.Contains("--startup-state"))
+        {
+            try { Shutdown(StartupRegistration.IsEnabled ? 0 : 2); }
+            catch (Exception ex) { File.WriteAllText(Path.Combine(directory, "startup-config-error.txt"), ex.ToString()); Shutdown(1); }
+            return;
+        }
+        var configure = Array.IndexOf(args, "--configure-startup");
+        if (configure >= 0)
+        {
+            try
+            {
+                if (configure + 1 >= args.Length || args[configure + 1] is not ("on" or "off")) throw new ArgumentException("Use --configure-startup on|off.");
+                StartupRegistration.Set(args[configure + 1] == "on"); Shutdown(0);
+            }
+            catch (Exception ex) { File.WriteAllText(Path.Combine(directory, "startup-config-error.txt"), ex.ToString()); Shutdown(1); }
+            return;
+        }
         var startupLog = Path.Combine(directory, "startup.log");
         void Log(string message) { try { File.AppendAllText(startupLog, $"{DateTimeOffset.Now:O} {message}\n"); } catch { } }
         Log($"Starting {AgentHost.Version}; tray={args.Contains("--tray")}; path={Environment.ProcessPath}");
@@ -37,7 +54,7 @@ public partial class App : System.Windows.Application
         catch (Exception ex)
         {
             Directory.CreateDirectory(directory); File.WriteAllText(Path.Combine(directory, "startup-error.txt"), ex.ToString());
-            if (!testing) MessageBox.Show($"Не удалось запустить Пульт.\n{ex.Message}", "Пульт");
+            if (!testing && !args.Contains("--tray")) MessageBox.Show($"Не удалось запустить Пульт.\n{ex.Message}", "Пульт");
             Shutdown(1);
         }
     }

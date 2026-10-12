@@ -63,7 +63,7 @@ public partial class MainWindow : System.Windows.Window
         var iconKey = job is null ? null : job.Action + ":" + badge;
         if (iconKey != countdownIconKey)
         {
-            var next = job is null ? null : TimerTrayIcon.Create(trayIcon, badge!, job.Action);
+            var next = job is null ? null : TimerTrayIcon.Create(badge!, job.Action);
             tray.Icon = next ?? trayIcon;
             countdownIcon?.Dispose(); countdownIcon = next; countdownIconKey = iconKey;
         }
@@ -150,7 +150,7 @@ public partial class MainWindow : System.Windows.Window
         Page.Children.Add(themes);
         var updates = new CheckBox { Content = "Проверять обновления", IsChecked = host.Service.State.CheckUpdates }; Page.Children.Add(updates);
         var startup = new CheckBox { Content = "Запускать вместе с Windows", IsChecked = IsStartupEnabled() }; Page.Children.Add(startup);
-        if(!demo && StartupRegistration.IsDisabledByWindows) Page.Children.Add(Text("Windows отключила автозапуск. Включи «Пульт» в Диспетчере задач → Автозагрузка приложений.", 12, true));
+        if(!demo) Page.Children.Add(Text("Запуск через Планировщик задач: при входе в твой профиль, через 15 секунд, без прав администратора.", 12, true));
         updates.Click += (_, _) =>
         {
             try { host.Service.SaveSettings(host.Service.State.Name, host.Service.State.Theme, updates.IsChecked == true); Notice.Text = "Проверка обновлений настроена."; }
@@ -158,7 +158,7 @@ public partial class MainWindow : System.Windows.Window
         };
         startup.Click += (_, _) =>
         {
-            try { SetStartup(startup.IsChecked == true); startup.IsChecked = IsStartupEnabled(); Notice.Text = !demo && StartupRegistration.IsDisabledByWindows ? "Запись сохранена, но автозапуск отключён в Windows." : startup.IsChecked == true ? "Автозапуск включён." : "Автозапуск выключен."; }
+            try { SetStartup(startup.IsChecked == true); startup.IsChecked = IsStartupEnabled(); Notice.Text = startup.IsChecked == true ? "Автозапуск включён." : "Автозапуск выключен."; }
             catch (Exception ex) { startup.IsChecked = IsStartupEnabled(); Notice.Text = $"Не удалось изменить автозапуск: {ex.Message}"; }
         };
         Page.Children.Add(Button("Сохранить имя компьютера", () => { host.Service.SaveSettings(name.Text, host.Service.State.Theme, updates.IsChecked == true); Notice.Text = "Имя компьютера сохранено."; }, true));
