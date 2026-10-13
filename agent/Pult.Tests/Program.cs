@@ -70,6 +70,25 @@ Check(TrayCountdown.Label(TimeSpan.FromSeconds(59)) == "59с", "tray shows secon
 Check(TrayCountdown.Label(TimeSpan.FromMinutes(99)) == "99", "tray fits two digit minutes");
 Check(TrayCountdown.Label(TimeSpan.FromMinutes(100)) == "2ч", "tray shows compact hours for long timers");
 Check(TrayCountdown.Label(TimeSpan.FromHours(24)) == "24ч", "tray supports maximum timer duration");
+var outputComputer = new Computer(); var outputStore = new Store(); var outputAgent = new AgentService(outputStore, outputComputer);
+var outputPair = outputAgent.Pair(new(outputAgent.BeginPairing().Code, "Output phone"), "local", info);
+var outputPhone = outputAgent.Authenticate(outputPair.Token)!;
+Check(outputAgent.Status("test").Outputs?.Count(x => x.Selected) == 1, "output status marks current device");
+var outputCommand = new Command(Guid.NewGuid().ToString(), "audioOutput", DeviceId:"headphones");
+outputAgent.Execute(outputPhone, outputCommand);
+Check(outputAgent.Status("test").Outputs?.Single(x => x.Selected).Id == "headphones", "output command selects requested device");
+Check(outputAgent.Execute(outputPhone, outputCommand).Duplicate && outputComputer.Calls.Count == 1, "output command deduplicated");
+Reject(() => outputAgent.Execute(outputPhone, outputCommand with {DeviceId="speakers"}), 409, "request ID cannot change output device");
+Reject(() => outputAgent.Execute(outputPhone, new(Guid.NewGuid().ToString(),"audioOutput")), 400, "output command needs device ID");
+Reject(() => outputAgent.Execute(outputPhone, new(Guid.NewGuid().ToString(),"audioOutput",42,DeviceId:"headphones")), 400, "output rejects volume parameter");
+Reject(() => outputAgent.Execute(outputPhone, new(Guid.NewGuid().ToString(),"volume",42,DeviceId:"headphones")), 400, "other commands reject output parameter");
+Reject(() => outputAgent.Execute(outputPhone, new(Guid.NewGuid().ToString(),"audioOutput",DeviceId:"disconnected")), 409, "disconnected output rejected");
+Check(outputAgent.Status("test").Outputs?.Single(x => x.Selected).Id == "headphones", "failed switch preserves selected output");
+var legacyId = Guid.NewGuid().ToString();
+var legacyPayload = JsonSerializer.Serialize(new { requestId="", action="playPause", value=(int?)null, replace=false, timerAction=(string?)null, durationSeconds=(int?)null }, Protocol.Json);
+outputStore.State.Receipts.Add(new(legacyId,outputPhone.Id,Protocol.Hash(legacyPayload),DateTimeOffset.UtcNow,"done"));
+outputAgent = new AgentService(outputStore, outputComputer);
+Check(outputAgent.Execute(outputPhone,new(legacyId,"playPause")).Duplicate, "existing command receipts survive output feature upgrade");
 Console.WriteLine($"{passed} checks passed; no real OS actions.");
 
 sealed class Store : IStateStore
@@ -80,8 +99,11 @@ sealed class Store : IStateStore
 }
 sealed class Computer : IComputer
 {
+    private string selectedOutput = "speakers";
     public List<string> Calls = []; public AudioState GetAudio() => new(38, false);
     public void Execute(string action, int? value) => Calls.Add(action);
+    public AudioOutput[] GetOutputs() => [new("speakers","Speakers",selectedOutput=="speakers"),new("headphones","Headphones",selectedOutput=="headphones")];
+    public void SetOutput(string id) {if(!GetOutputs().Any(x=>x.Id==id))throw new RequestException(409,"Disconnected"); selectedOutput=id; Calls.Add("audioOutput:"+id);}
 }
 sealed class Clock : TimeProvider
 {

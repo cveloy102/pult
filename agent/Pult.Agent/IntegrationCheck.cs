@@ -38,6 +38,13 @@ internal static class IntegrationCheck
         var result = await http.PostAsJsonAsync("/api/command", command); result.EnsureSuccessStatusCode();
         var status = await http.GetFromJsonAsync<AgentStatus>("/api/status", Protocol.Json); Check(status?.Audio?.Volume == 61, "volume state through API");
         var repeated = await http.PostAsJsonAsync("/api/command", command); var repeatBody = await repeated.Content.ReadFromJsonAsync<CommandResult>(Protocol.Json); Check(repeatBody?.Duplicate == true, "duplicate requests not repeated");
+        Check(status?.Outputs?.Length == 2 && status.Outputs.Any(x => x.Selected), "HTTPS exposes connected outputs");
+        var outputCommand = new Command(Guid.NewGuid().ToString(), "audioOutput", DeviceId:"demo-headphones");
+        var outputResult = await http.PostAsJsonAsync("/api/command",outputCommand); outputResult.EnsureSuccessStatusCode();
+        var outputStatus = await http.GetFromJsonAsync<AgentStatus>("/api/status",Protocol.Json);
+        Check(outputStatus?.Outputs?.Single(x=>x.Selected).Id=="demo-headphones", "HTTPS changes selected output");
+        var removedOutput = await http.PostAsJsonAsync("/api/command",new Command(Guid.NewGuid().ToString(),"audioOutput",DeviceId:"removed"));
+        Check(removedOutput.StatusCode==HttpStatusCode.Conflict,"HTTPS rejects disconnected output");
         var invalid = await http.PostAsJsonAsync("/api/command", new Command(Guid.NewGuid().ToString(), "shell", 1)); Check(invalid.StatusCode == HttpStatusCode.BadRequest, "unknown command rejected");
         var timer = await http.PostAsJsonAsync("/api/command", new Command(Guid.NewGuid().ToString(), "timer", TimerAction: "lock", DurationSeconds: 120)); timer.EnsureSuccessStatusCode();
         var conflict = await http.PostAsJsonAsync("/api/command", new Command(Guid.NewGuid().ToString(), "timer", TimerAction: "shutdown", DurationSeconds: 60)); Check(conflict.StatusCode == HttpStatusCode.Conflict, "timer replacement requires consent");

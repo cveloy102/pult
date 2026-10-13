@@ -44,6 +44,7 @@ import kotlinx.coroutines.withContext
 import java.time.OffsetDateTime
 import kotlin.math.max
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 
 data class Palette(val base: Color, val surface: Color, val ink: Color, val sub: Color, val line: Color, val accent: Color, val accentInk: Color, val radius: Int)
 data class TimerPlan(val action: String, val seconds: Int, val replace: Boolean)
@@ -67,6 +68,7 @@ class MainActivity : ComponentActivity() {
     private var tab by mutableStateOf("remote")
     private var confirming by mutableStateOf<String?>(null)
     private var themesOpen by mutableStateOf(false)
+    private var outputsOpen by mutableStateOf(false)
     private var candidate by mutableStateOf<Candidate?>(null)
     private var found by mutableStateOf<List<Candidate>>(emptyList())
     private var update by mutableStateOf<AndroidRelease?>(null)
@@ -141,21 +143,21 @@ class MainActivity : ComponentActivity() {
         is java.net.ConnectException -> "Не удалось подключиться. Проверь Wi-Fi, агент и брандмауэр Windows."
         else -> ex.message?.take(180) ?: "Не удалось выполнить действие."
     }
-    private fun send(action: String, value: Int? = null, timerAction: String? = null, seconds: Int? = null, replace: Boolean = false) {
+    private fun send(action: String, value: Int? = null, timerAction: String? = null, seconds: Int? = null, replace: Boolean = false, deviceId: String? = null) {
         val selected = connection ?: return
         if (action in sending) return
         sending = sending + action
         lifecycleScope.launch {
             try {
             commandMutex.withLock {
-                withContext(Dispatchers.IO) { PultApi.command(selected, action, value, timerAction, seconds, replace) }
+                withContext(Dispatchers.IO) { PultApi.command(selected, action, value, timerAction, seconds, replace, deviceId=deviceId) }
                 // Power commands can disconnect the PC immediately after acceptance.
                 if (action !in setOf("shutdown", "restart")) {
                     val result = withContext(Dispatchers.IO) { PultApi.status(selected) }
                     if (connection == selected) applyStatus(result)
                 }
             }
-            if (action != "playPause") message = when(action) { "timer" -> "${timerActionName(timerAction ?: "")} через ${(seconds ?: 0)/60} мин. Таймер запущен на ПК."; "cancelTimer" -> "Таймер отменён."; "lock" -> "Команда блокировки принята."; "shutdown", "restart" -> "Команда принята агентом."; else -> "Громкость изменена." }
+            if (action != "playPause") message = when(action) { "audioOutput" -> "Устройство вывода переключено."; "timer" -> "${timerActionName(timerAction ?: "")} через ${(seconds ?: 0)/60} мин. Таймер запущен на ПК."; "cancelTimer" -> "Таймер отменён."; "lock" -> "Команда блокировки принята."; "shutdown", "restart" -> "Команда принята агентом."; else -> "Громкость изменена." }
             } catch (ex: Exception) { message = readable(ex) }
             finally { sending = sending - action }
         }
@@ -202,6 +204,7 @@ class MainActivity : ComponentActivity() {
                 AlertDialog(onDismissRequest={confirming=null},title={Text(if(action=="restart")"Перезагрузить ПК?" else "Выключить ПК?")},text={Text("Сохрани открытые документы. Windows может попросить подтвердить их закрытие.")},confirmButton={TextButton(onClick={confirming=null;send(action)}) { Text(if(action=="restart")"Перезагрузить" else "Выключить") }},dismissButton={TextButton(onClick={confirming=null}) { Text("Отмена") }})
             }
             if(themesOpen) ThemeDialog(p)
+            if(outputsOpen) OutputDialog(p)
             if(candidate != null) PairDialog(p)
             update?.let { release ->
                 AlertDialog(onDismissRequest={update=null},title={Text("Пульт ${release.version}")},text={Column { Text("Доступна новая версия Android-приложения."); Spacer(Modifier.height(10.dp)); Text(release.notes.take(600),fontSize=12.sp) }},confirmButton={TextButton(enabled=!busy,onClick={task { val apk=withContext(Dispatchers.IO){AndroidUpdates.download(this@MainActivity,release)}; update=null; pendingApk=apk; if(packageManager.canRequestPackageInstalls()){pendingApk=null;AndroidUpdates.install(this@MainActivity,apk)} else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,android.net.Uri.parse("package:$packageName"))) }}){Text("Скачать и установить")}},dismissButton={TextButton(onClick={update=null}){Text("Позже")}})
@@ -250,6 +253,38 @@ class MainActivity : ComponentActivity() {
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("Громкость",fontSize=13.sp,color=p.ink);Text(if(status?.volume==null)"Недоступна" else "${volume.toInt()}%",fontSize=13.sp,color=p.sub,modifier=Modifier.width(90.dp),textAlign=TextAlign.End)}
         Row(verticalAlignment=Alignment.CenterVertically){Symbol("volume",p.sub,22);Slider(value=volume,onValueChange={dragging=true;volume=it},onValueChangeFinished={dragging=false;setVolume(volume.toInt())},valueRange=0f..100f,enabled=connected&&!busy&&status?.volume!=null,modifier=Modifier.weight(1f).padding(horizontal=12.dp));OutlinedButton(onClick={send("playPause")},enabled=connected&&!busy,contentPadding=PaddingValues(12.dp),shape=RoundedCornerShape(p.radius.dp),modifier=Modifier.size(52.dp)){Text("▶Ⅱ",fontSize=16.sp,color=p.ink)}}
         Text("Плей / пауза — системная медиаклавиша",fontSize=10.sp,color=p.sub)
+        if (status?.outputSelection == true) {
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick={outputsOpen=true}, enabled=connected, shape=RoundedCornerShape(p.radius.dp), modifier=Modifier.fillMaxWidth().height(62.dp), contentPadding=PaddingValues(horizontal=14.dp)) {
+                Column(Modifier.weight(1f),horizontalAlignment=Alignment.Start) {
+                    Text("Устройство вывода",fontSize=10.sp,color=p.sub,maxLines=1)
+                    Text(status?.outputs?.firstOrNull { it.selected }?.name ?: "Выбрать устройство",fontSize=13.sp,color=p.ink,maxLines=1,overflow=TextOverflow.Ellipsis)
+                }
+                Spacer(Modifier.width(10.dp))
+                if ("audioOutput" in sending) CircularProgressIndicator(Modifier.size(18.dp),color=p.accent,strokeWidth=2.dp)
+                else Text("›",fontSize=24.sp,color=p.sub,modifier=Modifier.width(18.dp),textAlign=TextAlign.Center)
+            }
+        }
+    }
+    @Composable private fun OutputDialog(p:Palette) {
+        val devices = status?.outputs.orEmpty()
+        val switching = "audioOutput" in sending
+        AlertDialog(onDismissRequest={outputsOpen=false}, containerColor=p.surface, shape=RoundedCornerShape(p.radius.dp), tonalElevation=0.dp, titleContentColor=p.ink, textContentColor=p.ink, title={Text("Устройство вывода",fontFamily=if(theme=="signal")FontFamily.Monospace else FontFamily.SansSerif,fontSize=22.sp)}, text={
+            Column {
+                Text("Системный звук Windows. Программы со своим выбором устройства могут использовать его.",fontSize=12.sp,color=p.sub)
+                Spacer(Modifier.height(12.dp))
+                Column(Modifier.heightIn(max=330.dp).verticalScroll(rememberScrollState())) {
+                    if(devices.isEmpty()) Text("Подключённых устройств вывода нет.",color=p.sub)
+                    devices.forEach { device ->
+                        Row(Modifier.fillMaxWidth().clickable(enabled=connected&&!switching) { outputsOpen=false;send("audioOutput",deviceId=device.id) }.padding(vertical=7.dp),verticalAlignment=Alignment.CenterVertically) {
+                            RadioButton(selected=device.selected,onClick=null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(device.name,fontSize=13.sp,color=p.ink,modifier=Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+        },confirmButton={TextButton(onClick={outputsOpen=false}){Text("Готово")}})
     }
     @Composable private fun TimerScreen(p:Palette) {
         var minutes by rememberSaveable { mutableStateOf("30") }

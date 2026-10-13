@@ -100,7 +100,9 @@ public sealed class AgentService
         {
             AudioState? audio = null; string? error = LastError;
             try { audio = computer.GetAudio(); } catch { error ??= "Аудиоустройство сейчас недоступно."; }
-            return new(State.Name, version, Protocol.Version, Protocol.Capabilities, State.Timer, audio, error);
+            AudioOutput[] outputs = [];
+            try { outputs = computer.GetOutputs(); } catch { error ??= "Список устройств вывода сейчас недоступен."; }
+            return new(State.Name, version, Protocol.Version, Protocol.Capabilities, State.Timer, audio, error, outputs);
         }
     }
 
@@ -135,6 +137,7 @@ public sealed class AgentService
                     LogTimer(State.Timer, "scheduled");
                 }
                 else if (request.Action == "cancelTimer") { if(State.Timer is {} cancelled)LogTimer(cancelled, "cancelled"); State.Timer = null; }
+                else if (request.Action == "audioOutput") computer.SetOutput(request.DeviceId!);
                 else computer.Execute(request.Action, request.Value);
                 ReplaceReceipt(receipt with { Status = "done" }); store.Save(State); LastError = null;
                 return new(true, false, "Команда принята.");
@@ -150,10 +153,16 @@ public sealed class AgentService
 
     private static void Validate(Command request)
     {
+        if (request.Action != "audioOutput" && request.DeviceId is not null)
+            throw new RequestException(400, "Устройство допустимо только для команды audioOutput.");
         if (request.Action != "timer" && (request.TimerAction is not null || request.DurationSeconds is not null || request.Replace))
             throw new RequestException(400, "Параметры таймера допустимы только для команды timer.");
         switch (request.Action)
         {
+            case "audioOutput":
+                if (request.Value is not null || string.IsNullOrWhiteSpace(request.DeviceId) || request.DeviceId.Length > 512 || request.DeviceId.Contains('\0'))
+                    throw new RequestException(400, "Выбери устройство вывода из списка.");
+                break;
             case "shutdown": case "restart": case "lock": case "playPause": case "cancelTimer":
                 if (request.Value is not null) throw new RequestException(400, "Эта команда не принимает значение."); break;
             case "volume":

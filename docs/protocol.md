@@ -16,9 +16,11 @@ HTTPS TCP 47591, discovery UDP 47592. Только локальные адрес
 
 `GET /api/info`: `name`, `version`, `protocol`, `capabilities`, `fingerprint`.
 
-`GET /api/status`, заголовок `Authorization: Bearer TOKEN`: `name`, `version`, `protocol`, `capabilities`, `timer`, `audio`, `error`.
+`GET /api/status`, заголовок `Authorization: Bearer TOKEN`: `name`, `version`, `protocol`, `capabilities`, `timer`, `audio`, `error`, `outputs`.
 
 `timer`: null или `{id,action,dueAt}`. `dueAt` — дата UTC в ISO 8601. `audio`: null или `{volume,muted}`; отсутствие устройства не делает питание недоступным.
+
+Возможность `audioOutput` добавлена без смены протокола: `outputs` — список активных выходов `{id,name,selected}`, только устройства воспроизведения. Android показывает выбор только при наличии этой возможности; со старым агентом остальные команды работают. `id` — непрозрачный идентификатор Windows, а не индекс или название. Системный выход console/multimedia переключается, отдельный выход communications сохраняется. При частичной ошибке агент пытается восстановить прежние выходы.
 
 `POST /api/command`, тот же заголовок, `Content-Type: application/json`:
 
@@ -31,6 +33,7 @@ HTTPS TCP 47591, discovery UDP 47592. Только локальные адрес
 | shutdown, restart, lock, playPause | Без дополнительных параметров |
 | volume | value 0..100 |
 | volumeStep | value -5 или 5 |
+| audioOutput | deviceId из текущего outputs, до 512 символов |
 | timer | timerAction shutdown/restart/lock, durationSeconds 1..86400, replace false/true |
 | cancelTimer | Без дополнительных параметров |
 

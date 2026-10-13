@@ -16,7 +16,8 @@ import javax.net.ssl.X509TrustManager
 
 data class Candidate(val address: String, val name: String, val fingerprint: String, val protocol: Int)
 data class TimerStatus(val action: String, val dueAt: String)
-data class Status(val name: String, val volume: Int?, val muted: Boolean, val timer: TimerStatus?, val error: String?)
+data class AudioOutput(val id: String, val name: String, val selected: Boolean)
+data class Status(val name: String, val volume: Int?, val muted: Boolean, val timer: TimerStatus?, val error: String?, val outputs: List<AudioOutput> = emptyList(), val outputSelection: Boolean = false)
 class ApiException(val status: Int, message: String) : Exception(message)
 
 object PultApi {
@@ -81,12 +82,20 @@ object PultApi {
         val json = request(connection.address, "/api/status", connection.fingerprint, connection.token).first
         require(json.getInt("protocol") == PROTOCOL) { "Версии протокола несовместимы." }
         val audio = json.optJSONObject("audio"); val timer = json.optJSONObject("timer")
+        val outputs = json.optJSONArray("outputs")
+        val devices = if (outputs == null) emptyList() else (0 until outputs.length()).map { index ->
+            val device = outputs.getJSONObject(index)
+            AudioOutput(device.getString("id"), device.getString("name"), device.optBoolean("selected"))
+        }
+        val capabilities = json.optJSONArray("capabilities")
+        val outputSelection = capabilities != null && (0 until capabilities.length()).any { capabilities.optString(it) == "audioOutput" }
         return Status(json.getString("name"), audio?.getInt("volume"), audio?.optBoolean("muted") ?: false,
-            timer?.let { TimerStatus(it.getString("action"), it.getString("dueAt")) }, json.optString("error").takeIf { it.isNotBlank() && it != "null" })
+            timer?.let { TimerStatus(it.getString("action"), it.getString("dueAt")) }, json.optString("error").takeIf { it.isNotBlank() && it != "null" }, devices, outputSelection)
     }
-    fun command(connection: Connection, action: String, value: Int? = null, timerAction: String? = null, seconds: Int? = null, replace: Boolean = false, requestId: String = UUID.randomUUID().toString()) {
+    fun command(connection: Connection, action: String, value: Int? = null, timerAction: String? = null, seconds: Int? = null, replace: Boolean = false, requestId: String = UUID.randomUUID().toString(), deviceId: String? = null) {
         val body = JSONObject().put("requestId", requestId).put("action", action).put("replace", replace)
         value?.let { body.put("value", it) }; timerAction?.let { body.put("timerAction", it) }; seconds?.let { body.put("durationSeconds", it) }
+        deviceId?.let { body.put("deviceId", it) }
         request(connection.address, "/api/command", connection.fingerprint, connection.token, body)
     }
     fun discover(): List<Candidate> {

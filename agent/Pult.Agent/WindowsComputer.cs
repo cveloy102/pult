@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace Pult.Agent;
 
-public sealed class WindowsComputer(bool demo) : IComputer
+public sealed partial class WindowsComputer(bool demo) : IComputer
 {
     private int demoVolume = 38;
     public AudioState GetAudio() => demo ? new(demoVolume, false) : WithAudio(endpoint =>
@@ -77,7 +77,7 @@ public sealed class WindowsComputer(bool demo) : IComputer
     [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IMMDeviceEnumerator
     {
-        [PreserveSig] int EnumAudioEndpoints(int flow, int mask, out IntPtr devices);
+        [PreserveSig] int EnumAudioEndpoints(int flow, int mask, out IMMDeviceCollection devices);
         [PreserveSig] int GetDefaultAudioEndpoint(int flow, int role, out IMMDevice device);
         [PreserveSig] int GetDevice([MarshalAs(UnmanagedType.LPWStr)] string id, out IMMDevice device);
         [PreserveSig] int RegisterEndpointNotificationCallback(IntPtr client);
@@ -87,7 +87,7 @@ public sealed class WindowsComputer(bool demo) : IComputer
     private interface IMMDevice
     {
         [PreserveSig] int Activate(ref Guid iid, uint context, IntPtr parameters, [MarshalAs(UnmanagedType.IUnknown)] out object endpoint);
-        [PreserveSig] int OpenPropertyStore(uint access, out IntPtr properties);
+        [PreserveSig] int OpenPropertyStore(uint access, out IPropertyStore properties);
         [PreserveSig] int GetId(out IntPtr id);
         [PreserveSig] int GetState(out uint state);
     }
