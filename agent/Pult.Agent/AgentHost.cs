@@ -17,7 +17,7 @@ namespace Pult.Agent;
 public sealed class AgentHost : IAsyncDisposable
 {
     public static readonly string Version = typeof(AgentHost).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
-        .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0] ?? "0.1.0";
+        .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
     private WebApplication? server;
     private UdpClient? discovery;
     private readonly CancellationTokenSource cancellation = new();

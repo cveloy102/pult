@@ -194,7 +194,7 @@ public partial class MainWindow : System.Windows.Window
         try
         {
             using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-            var release = await new ReleaseClient(http).FindAsync(host.Service.State.ReleaseRepository, "agent");
+            var release = await new ReleaseClient(http, AgentHost.Version).FindAsync(host.Service.State.ReleaseRepository, "agent");
             if (release is null || release.Version <= new Version(AgentHost.Version)) { Notice.Text = "Установлена актуальная версия агента."; return; }
             if(host.Service.Status(AgentHost.Version).Timer is not null) { Notice.Text = "Перед обновлением отмени активный таймер."; return; }
             var asset = AgentUpdates.SelectInstaller(release, host.Service.State.ReleaseRepository);
@@ -219,7 +219,7 @@ public partial class MainWindow : System.Windows.Window
         try
         {
             using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-            var release = await new ReleaseClient(http).FindAsync(host.Service.State.ReleaseRepository, "agent");
+            var release = await new ReleaseClient(http, AgentHost.Version).FindAsync(host.Service.State.ReleaseRepository, "agent");
             if (release is not null && release.Version > new Version(AgentHost.Version))
             {
                 Notice.Text = $"Доступен Пульт {release.Version}. Открой «Обновления».";

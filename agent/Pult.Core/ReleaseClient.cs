@@ -6,7 +6,7 @@ namespace Pult.Core;
 public sealed record ReleaseAsset(string Name, string Url, string? Digest);
 public sealed record AvailableRelease(string Tag, Version Version, string Url, string Notes, ReleaseAsset[] Assets);
 
-public sealed class ReleaseClient(HttpClient http)
+public sealed class ReleaseClient(HttpClient http, string clientVersion = "0.0.0")
 {
     public static Version? ParseVersion(string tag, string component)
     {
@@ -21,7 +21,7 @@ public sealed class ReleaseClient(HttpClient http)
         for (var page = 1; page <= 100; page++)
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/repos/{repository}/releases?per_page=100&page={page}");
-            request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Pult", "0.1.0"));
+            request.Headers.UserAgent.Add(new ProductInfoHeaderValue("Pult", clientVersion));
             using var response = await http.SendAsync(request, cancellation); response.EnsureSuccessStatusCode();
             using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellation));
             var count = 0;
