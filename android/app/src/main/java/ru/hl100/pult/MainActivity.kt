@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 
 data class Palette(val base: Color, val surface: Color, val ink: Color, val sub: Color, val line: Color, val accent: Color, val accentInk: Color, val radius: Int)
 data class TimerPlan(val action: String, val seconds: Int, val replace: Boolean)
+fun formatRemaining(seconds: Long) = if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds % 3600 / 60, seconds % 60) else "%02d:%02d".format(seconds / 60, seconds % 60)
 fun timerActionName(action: String) = when(action) { "shutdown" -> "Выключение"; "restart" -> "Перезагрузка"; "lock" -> "Блокировка"; else -> "Неизвестное действие" }
 fun palette(theme: String): Palette = when (theme) {
     "quiet" -> Palette(Color(0xFFF6F3EC), Color(0xFFEBE7DF), Color(0xFF272C29), Color(0xFF626B63), Color(0xFFD8DCD3), Color(0xFF425749), Color(0xFFFFFDF6), 22)
@@ -74,6 +75,8 @@ class MainActivity : ComponentActivity() {
     private var update by mutableStateOf<AndroidRelease?>(null)
     private var pendingApk: java.io.File? = null
     private val commandMutex = Mutex()
+    // Incremented by every command; a status poll started earlier must not overwrite newer state.
+    private var commandEpoch = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -101,21 +104,27 @@ class MainActivity : ComponentActivity() {
     }
     private suspend fun refreshStatus() {
         val selected = connection ?: return
+        // Polling never holds the command lock, so buttons are not delayed by a slow status request.
+        if (commandMutex.isLocked) return
+        val epoch = commandEpoch
         try {
-            commandMutex.withLock {
-                val result = withContext(Dispatchers.IO) { PultApi.status(selected) }
-                if (connection == selected) applyStatus(result)
-            }
+            val result = withContext(Dispatchers.IO) { PultApi.status(selected) }
+            if (connection == selected && epoch == commandEpoch && !commandMutex.isLocked) applyStatus(result)
         } catch (ex: Exception) {
-            if (connection != selected) return
-            connected = false; settings.widgetMessage = if (ex is ApiException && ex.status == 401) "Доступ отозван" else "Нет связи с ПК"; Widgets.refresh(this)
+            if (connection != selected || epoch != commandEpoch) return
+            connected = false; updateWidget(if (ex is ApiException && ex.status == 401) "Доступ отозван" else "Нет связи с ПК")
         }
     }
     private fun applyStatus(result: Status) {
         if (result.error != null && result.error != status?.error) message = result.error
+        val wasConnected = connected
         status = result; connected = true
-        result.volume?.let { settings.lastVolume = it }
-        settings.widgetMessage = "Последний ответ: ПК доступен"; Widgets.refresh(this)
+        result.volume?.let { if (it != settings.lastVolume) settings.lastVolume = it }
+        // Only on reconnect: keeps widget command results visible and avoids redraws every poll.
+        if (!wasConnected) updateWidget("Последний ответ: ПК доступен")
+    }
+    private fun updateWidget(text: String) {
+        if (settings.widgetMessage != text) { settings.widgetMessage = text; Widgets.refresh(this) }
     }
     private fun setVolume(value: Int) {
         val selected = connection ?: return
@@ -123,6 +132,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 commandMutex.withLock {
+                    commandEpoch++
                     withContext(Dispatchers.IO) { PultApi.command(selected, "volume", value) }
                     val result = withContext(Dispatchers.IO) { PultApi.status(selected) }
                     if(connection == selected) applyStatus(result)
@@ -138,7 +148,7 @@ class MainActivity : ComponentActivity() {
     }
     private fun readable(ex: Exception): String = when(ex) {
         is ApiException -> ex.message ?: "Команда не выполнена."
-        is javax.net.ssl.SSLException -> "Сертификат ПК не совпадает. Проверь агент и привяжи ПК заново."
+        is javax.net.ssl.SSLException -> if (generateSequence<Throwable>(ex) { it.cause }.any { it is java.security.cert.CertificateException }) "Сертификат ПК не совпадает. Проверь агент и привяжи ПК заново." else "Не удалось установить защищённое соединение с ПК. Проверь сеть и агент."
         is java.net.SocketTimeoutException -> "ПК не ответил. Команда могла быть принята — проверь состояние перед повтором."
         is java.net.ConnectException -> "Не удалось подключиться. Проверь Wi-Fi, агент и брандмауэр Windows."
         else -> ex.message?.take(180) ?: "Не удалось выполнить действие."
@@ -150,6 +160,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
             commandMutex.withLock {
+                commandEpoch++
                 withContext(Dispatchers.IO) { PultApi.command(selected, action, value, timerAction, seconds, replace, deviceId=deviceId) }
                 // Power commands can disconnect the PC immediately after acceptance.
                 if (action !in setOf("shutdown", "restart")) {
@@ -242,7 +253,7 @@ class MainActivity : ComponentActivity() {
         val timer=status?.timer
         val remaining=timer?.let { runCatching { max(0,(OffsetDateTime.parse(it.dueAt).toInstant().toEpochMilli()-now)/1000) }.getOrDefault(0) }
         Row(Modifier.fillMaxWidth().border(1.dp,p.line,RoundedCornerShape(p.radius.dp)).padding(16.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween) {
-            Column(Modifier.weight(1f)) { Text(if(timer==null)"Активных таймеров нет" else if(!connected)"Последний таймер · нет связи" else when(timer.action){"lock"->"Блокировка через";"restart"->"Перезагрузка через";else->"Выключение через"},fontSize=11.sp,color=p.sub,maxLines=1); Spacer(Modifier.height(7.dp)); Text(if(remaining==null)"—" else "%02d:%02d".format(remaining/60,remaining%60),fontSize=29.sp,color=p.ink,maxLines=1) }
+            Column(Modifier.weight(1f)) { Text(if(timer==null)"Активных таймеров нет" else if(!connected)"Последний таймер · нет связи" else when(timer.action){"lock"->"Блокировка через";"restart"->"Перезагрузка через";else->"Выключение через"},fontSize=11.sp,color=p.sub,maxLines=1); Spacer(Modifier.height(7.dp)); Text(if(remaining==null)"—" else formatRemaining(remaining),fontSize=29.sp,color=p.ink,maxLines=1) }
             TextButton(enabled=connected&&!busy,onClick={if(timer==null)tab="timer" else send("cancelTimer")}){Text(if(timer==null)"Задать" else "Отменить",color=p.ink,fontSize=12.sp)}
         }
     }

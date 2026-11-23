@@ -89,6 +89,30 @@ var legacyPayload = JsonSerializer.Serialize(new { requestId="", action="playPau
 outputStore.State.Receipts.Add(new(legacyId,outputPhone.Id,Protocol.Hash(legacyPayload),DateTimeOffset.UtcNow,"done"));
 outputAgent = new AgentService(outputStore, outputComputer);
 Check(outputAgent.Execute(outputPhone,new(legacyId,"playPause")).Duplicate, "existing command receipts survive output feature upgrade");
+var settingsDirectory = Path.Combine(Path.GetTempPath(), "pult-tests-" + Guid.NewGuid().ToString("N"));
+try
+{
+    var settingsPath = Path.Combine(settingsDirectory, "settings.json");
+    new FileStateStore(settingsPath).Save(new AgentState { Name = "First" });
+    new FileStateStore(settingsPath).Save(new AgentState { Name = "Second" });
+    Check(File.Exists(settingsPath + ".bak") && new FileStateStore(settingsPath).Load().Name == "Second", "settings saved with previous version as backup");
+    File.WriteAllText(settingsPath, "{\"name\":");
+    var recoveredStore = new FileStateStore(settingsPath);
+    Check(recoveredStore.Load().Name == "First" && recoveredStore.RecoveryNote is not null, "damaged settings restored from backup");
+    Check(Directory.GetFiles(settingsDirectory, "settings.json.corrupt-*").Length == 1, "damaged settings kept aside for diagnostics");
+    var recoveredAgent = new AgentService(new FileStateStore(settingsPath), new Computer());
+    Check(recoveredAgent.LastError is not null && recoveredAgent.State.Name == "First", "agent starts and reports restored settings");
+    File.WriteAllText(settingsPath, ""); File.WriteAllText(settingsPath + ".bak", "garbage");
+    var resetStore = new FileStateStore(settingsPath);
+    Check(resetStore.Load().Phones.Count == 0 && resetStore.RecoveryNote?.Contains("сброшены") == true, "agent starts with clean settings when backup is damaged too");
+}
+finally { if (Directory.Exists(settingsDirectory)) Directory.Delete(settingsDirectory, true); }
+var expiryClock = new Clock(); var expiryStore = new Store();
+expiryStore.State.Timer = new("expired", "lock", expiryClock.GetUtcNow().AddSeconds(-1));
+var expiryAgent = new AgentService(expiryStore, new Computer(), expiryClock);
+Check(expiryAgent.LastError is not null && expiryAgent.Snapshot().Error is not null, "skipped timer reported");
+expiryClock.Advance(3601);
+Check(expiryAgent.LastError is null && expiryAgent.Status("test").Error is null, "old agent errors expire after an hour");
 Console.WriteLine($"{passed} checks passed; no real OS actions.");
 
 sealed class Store : IStateStore

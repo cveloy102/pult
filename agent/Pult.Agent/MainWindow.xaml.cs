@@ -28,6 +28,7 @@ public partial class MainWindow : System.Windows.Window
     private string? countdownIconKey;
     private TextBlock? timerHistory;
     private bool checkingUpdate;
+    private string? shownError;
     public MainWindow(AgentHost host, bool demo)
     {
         this.host = host; this.demo = demo; InitializeComponent(); ApplyTheme(host.Service.State.Theme);
@@ -54,8 +55,8 @@ public partial class MainWindow : System.Windows.Window
     public void Refresh()
     {
         RunningLabel.Text = host.Running ? demo ? "● ДЕМО · без системных команд" : "● АГЕНТ ЗАПУЩЕН" : "Запуск…";
-        var status = host.Service.Status(AgentHost.Version);
-        var job = status.Timer;
+        // Called every second: use the cheap snapshot, not Status() with audio device enumeration.
+        var (job, error) = host.Service.Snapshot();
         timerMenu.Enabled = cancelTimerMenu.Enabled = job is not null;
         timerMenu.Text = job is null ? "Нет активного таймера" : $"{ActionName(job.Action)} · {FormatRemaining(job.DueAt)}";
         tray.Text = job is null ? "Пульт" : $"Пульт · {ActionName(job.Action)} {FormatRemaining(job.DueAt)}";
@@ -76,7 +77,7 @@ public partial class MainWindow : System.Windows.Window
             timerText.Text = job is null ? "Не задан" : $"{ActionName(job.Action)} · {FormatRemaining(job.DueAt)}";
         }
         if (codeText is not null && DateTimeOffset.UtcNow >= codeExpires) codeText.Text = "Код истёк";
-        if (status.Error is not null) Notice.Text = status.Error;
+        if (error != shownError) { shownError = error; if (error is not null) Notice.Text = error; }
         if (!demo && host.Service.State.CheckUpdates && DateTimeOffset.UtcNow >= nextUpdateCheck)
         {
             nextUpdateCheck = DateTimeOffset.UtcNow.AddDays(1); _ = CheckUpdateBackground();
@@ -196,7 +197,7 @@ public partial class MainWindow : System.Windows.Window
             using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
             var release = await new ReleaseClient(http, AgentHost.Version).FindAsync(host.Service.State.ReleaseRepository, "agent");
             if (release is null || release.Version <= new Version(AgentHost.Version)) { Notice.Text = "Установлена актуальная версия агента."; return; }
-            if(host.Service.Status(AgentHost.Version).Timer is not null) { Notice.Text = "Перед обновлением отмени активный таймер."; return; }
+            if(host.Service.Snapshot().Timer is not null) { Notice.Text = "Перед обновлением отмени активный таймер."; return; }
             var asset = AgentUpdates.SelectInstaller(release, host.Service.State.ReleaseRepository);
             if(asset is null)
             {
@@ -206,7 +207,7 @@ public partial class MainWindow : System.Windows.Window
             if (MessageBox.Show($"Доступен Пульт для Windows {release.Version}.\nСкачать и запустить установщик обновления?\n\nАгент завершится перед установкой. Привязка телефона, сертификат и настройки сохранятся. По завершении установки Пульт запустится снова.", "Обновление Пульта", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
             Notice.Text = "Скачиваю и проверяю установщик…";
             var installer = await AgentUpdates.Download(asset, release, host.Service.State.ReleaseRepository);
-            if(host.Service.Status(AgentHost.Version).Timer is not null) { Notice.Text = "Появился активный таймер. Отмени его перед обновлением."; return; }
+            if(host.Service.Snapshot().Timer is not null) { Notice.Text = "Появился активный таймер. Отмени его перед обновлением."; return; }
             Process.Start(new ProcessStartInfo(installer) { UseShellExecute = true });
             await ((App)System.Windows.Application.Current).ExitAsync();
             Notice.Text = $"Доступна версия {release.Version}.";

@@ -45,20 +45,55 @@ public interface IStateStore
 {
     AgentState Load();
     void Save(AgentState state);
+    /// <summary>Set by Load when damaged settings were restored or reset.</summary>
+    string? RecoveryNote => null;
 }
 
 public sealed class FileStateStore(string path) : IStateStore
 {
-    public AgentState Load() => File.Exists(path)
-        ? JsonSerializer.Deserialize<AgentState>(File.ReadAllText(path), Protocol.Json) ?? throw new IOException("Настройки повреждены.")
-        : new();
+    private string Backup => path + ".bak";
+    public string? RecoveryNote { get; private set; }
+
+    public AgentState Load()
+    {
+        if (!File.Exists(path) && !File.Exists(Backup)) return new();
+        if (TryRead(path, out var state)) return state;
+        // A damaged file must not keep the agent (and the user's remote) from starting.
+        Quarantine();
+        if (TryRead(Backup, out state))
+        {
+            RecoveryNote = "Настройки были повреждены и восстановлены из резервной копии.";
+            return state;
+        }
+        RecoveryNote = "Настройки были повреждены и сброшены. Привяжи телефоны заново.";
+        return new();
+    }
+
+    private static bool TryRead(string file, out AgentState state)
+    {
+        state = null!;
+        if (!File.Exists(file)) return false;
+        try { state = JsonSerializer.Deserialize<AgentState>(File.ReadAllText(file), Protocol.Json)!; }
+        catch (JsonException) { return false; }
+        return state is not null;
+    }
+
+    private void Quarantine()
+    {
+        if (File.Exists(path)) File.Move(path, $"{path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmss}", true);
+    }
 
     public void Save(AgentState state)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
         var temp = path + ".tmp";
-        File.WriteAllText(temp, JsonSerializer.Serialize(state, Protocol.Json));
-        File.Move(temp, path, true);
+        using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            JsonSerializer.Serialize(stream, state, Protocol.Json);
+            stream.Flush(true); // Settings are saved right before shutdown/restart commands.
+        }
+        if (File.Exists(path)) File.Replace(temp, path, Backup, true);
+        else File.Move(temp, path);
     }
 }
 

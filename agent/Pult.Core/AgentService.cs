@@ -14,7 +14,15 @@ public sealed class AgentService
     private readonly Dictionary<string, (DateTimeOffset Start, int Count)> attempts = new();
     private DateTimeOffset lastTick;
     public AgentState State { get; }
-    public string? LastError { get; private set; }
+    public static readonly TimeSpan ErrorLifetime = TimeSpan.FromHours(1);
+    private string? lastError;
+    private DateTimeOffset lastErrorAt;
+    /// <summary>Last agent error; stale errors expire so old problems are not shown forever.</summary>
+    public string? LastError
+    {
+        get { lock (gate) return lastError is not null && time.GetUtcNow() - lastErrorAt < ErrorLifetime ? lastError : null; }
+        private set { lock (gate) { lastError = value; lastErrorAt = time.GetUtcNow(); } }
+    }
 
     public AgentService(IStateStore store, IComputer computer, TimeProvider? time = null)
     {
@@ -28,8 +36,12 @@ public sealed class AgentService
         }
         foreach (var receipt in State.Receipts.Where(x => x.Status == "pending").ToArray())
             ReplaceReceipt(receipt with { Status = "unknown" });
+        if (store.RecoveryNote is { } note) LastError = note;
         store.Save(State);
     }
+
+    /// <summary>Cheap state for frequent UI refresh: no audio device enumeration.</summary>
+    public (TimerJob? Timer, string? Error) Snapshot() { lock (gate) return (State.Timer, LastError); }
 
     public (string Code, DateTimeOffset Expires) BeginPairing()
     {
