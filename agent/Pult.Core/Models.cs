@@ -9,7 +9,7 @@ public static class Protocol
     public const int Version = 1;
     public const int Port = 47591;
     public const int DiscoveryPort = 47592;
-    public static readonly string[] Capabilities = ["shutdown", "restart", "lock", "timer", "volume", "playPause", "audioOutput"];
+    public static readonly string[] Capabilities = ["shutdown", "restart", "lock", "timer", "volume", "playPause", "audioOutput", "wakeOnLan"];
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
     public static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     public static string Token() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -24,7 +24,7 @@ public sealed record Command(string RequestId, string Action, int? Value = null,
 public sealed record AudioState(int Volume, bool Muted);
 public sealed record AudioOutput(string Id, string Name, bool Selected);
 public sealed record AgentInfo(string Name, string Version, int Protocol, string[] Capabilities, string Fingerprint);
-public sealed record AgentStatus(string Name, string Version, int Protocol, string[] Capabilities, TimerJob? Timer, AudioState? Audio, string? Error, AudioOutput[]? Outputs = null);
+public sealed record AgentStatus(string Name, string Version, int Protocol, string[] Capabilities, TimerJob? Timer, AudioState? Audio, string? Error, AudioOutput[]? Outputs = null, WakeTarget[]? Wake = null);
 public sealed record PairRequest(string Code, string Name);
 public sealed record PairResult(string Token, string PhoneId, AgentInfo Agent);
 public sealed record CommandResult(bool Accepted, bool Duplicate, string Message);
@@ -102,6 +102,7 @@ public interface IComputer
     AudioState GetAudio();
     void Execute(string action, int? value);
     AudioOutput[] GetOutputs() => [];
+    WakeTarget[] GetWakeTargets() => [];
     void SetOutput(string id) => throw new RequestException(409, "Переключение вывода недоступно.");
 }
 

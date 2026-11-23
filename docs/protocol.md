@@ -5,6 +5,7 @@ HTTPS TCP 47591, discovery UDP 47592. Только локальные адрес
 ## Привязка
 
 1. Пользователь создаёт на ПК одноразовый шестизначный код на 2 минуты.
+   Агент показывает его и QR-код `pult://pair?v=1&a=IP:PORT,…&f=SHA256&c=CODE&n=NAME`. Android, получив ссылку (сканер в приложении или системная камера), сам выполняет шаги 2–4 и требует точного совпадения сертификата с `f`; ручная сверка не нужна, но перед привязкой показывается подтверждение.
 2. Android получает `/api/info` без учётных данных и показывает SHA-256 сертификата.
 3. Пользователь сверяет полный отпечаток с окном агента.
 4. Android закрепляет сертификат и отправляет `POST /api/pair`: `{"code":"123456","name":"POCO F7"}`.
@@ -16,11 +17,13 @@ HTTPS TCP 47591, discovery UDP 47592. Только локальные адрес
 
 `GET /api/info`: `name`, `version`, `protocol`, `capabilities`, `fingerprint`.
 
-`GET /api/status`, заголовок `Authorization: Bearer TOKEN`: `name`, `version`, `protocol`, `capabilities`, `timer`, `audio`, `error`, `outputs`.
+`GET /api/status`, заголовок `Authorization: Bearer TOKEN`: `name`, `version`, `protocol`, `capabilities`, `timer`, `audio`, `error`, `outputs`, `wake`.
 
 `timer`: null или `{id,action,dueAt}`. `dueAt` — дата UTC в ISO 8601. `audio`: null или `{volume,muted}`; отсутствие устройства не делает питание недоступным.
 
 Возможность `audioOutput` добавлена без смены протокола: `outputs` — список активных выходов `{id,name,selected}`, только устройства воспроизведения. Android показывает выбор только при наличии этой возможности; со старым агентом остальные команды работают. `id` — непрозрачный идентификатор Windows, а не индекс или название. Системный выход console/multimedia переключается, отдельный выход communications сохраняется. При частичной ошибке агент пытается восстановить прежние выходы.
+
+Возможность `wakeOnLan`: `wake` — до четырёх `{mac,broadcast}` проводных и Wi-Fi адаптеров со шлюзом (виртуальные Hyper-V/WSL/VPN без шлюза исключаются). Android сохраняет последнее значение и, пока ПК недоступен, отправляет magic packet (6×0xFF + MAC×16) по UDP на порты 9 и 7: адрес широковещания подсети и 255.255.255.255, только локальные IPv4. Команды API для включения нет: выключенный агент не может её принять.
 
 `POST /api/command`, тот же заголовок, `Content-Type: application/json`:
 

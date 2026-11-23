@@ -6,8 +6,8 @@ android {
         applicationId = "ru.hl100.pult"
         minSdk = 31
         targetSdk = 36
-        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 1004
-        versionName = providers.gradleProperty("versionName").orNull ?: "0.1.4"
+        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 2000
+        versionName = providers.gradleProperty("versionName").orNull ?: "0.2.0"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -26,4 +26,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // Google code scanner: QR pairing without a camera permission in the app.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    testImplementation("junit:junit:4.13.2")
 }

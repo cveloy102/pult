@@ -32,6 +32,14 @@ public partial class App : System.Windows.Application
             catch (Exception ex) { File.WriteAllText(Path.Combine(directory, "startup-config-error.txt"), ex.ToString()); Shutdown(1); }
             return;
         }
+        if (args.Contains("--network-check"))
+        {
+            // Support/diagnostics: same check as the window, written as JSON. Exit 0 = no errors.
+            var checks = NetworkInspector.Run();
+            File.WriteAllText(Path.Combine(directory, "network-check.json"), System.Text.Json.JsonSerializer.Serialize(checks, Protocol.Json));
+            Shutdown(checks.Any(x => x.Level == "error") ? 1 : 0);
+            return;
+        }
         var startupLog = Path.Combine(directory, "startup.log");
         void Log(string message) { try { File.AppendAllText(startupLog, $"{DateTimeOffset.Now:O} {message}\n"); } catch { } }
         Log($"Starting {AgentHost.Version}; tray={args.Contains("--tray")}; path={Environment.ProcessPath}");
@@ -49,7 +57,7 @@ public partial class App : System.Windows.Application
             }
             var window = new MainWindow(host, args.Contains("--demo")); MainWindow = window;
             if (!args.Contains("--tray")) window.Show();
-            await host.StartAsync(loopbackOnly: demo, port: demo ? 47598 : Protocol.Port); window.Refresh(); Log("Agent ready.");
+            await host.StartAsync(loopbackOnly: demo, port: demo ? 47598 : Protocol.Port); window.Refresh(); window.AgentStarted(); Log("Agent ready.");
         }
         catch (Exception ex)
         {

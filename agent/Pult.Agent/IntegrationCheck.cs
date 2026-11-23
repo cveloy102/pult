@@ -39,6 +39,7 @@ internal static class IntegrationCheck
         var status = await http.GetFromJsonAsync<AgentStatus>("/api/status", Protocol.Json); Check(status?.Audio?.Volume == 61, "volume state through API");
         var repeated = await http.PostAsJsonAsync("/api/command", command); var repeatBody = await repeated.Content.ReadFromJsonAsync<CommandResult>(Protocol.Json); Check(repeatBody?.Duplicate == true, "duplicate requests not repeated");
         Check(status?.Outputs?.Length == 2 && status.Outputs.Any(x => x.Selected), "HTTPS exposes connected outputs");
+        Check(status?.Wake is [{ Mac.Length: 17, Broadcast: "192.168.1.255" }] && status.Capabilities.Contains("wakeOnLan"), "HTTPS exposes wake target");
         var outputCommand = new Command(Guid.NewGuid().ToString(), "audioOutput", DeviceId:"demo-headphones");
         var outputResult = await http.PostAsJsonAsync("/api/command",outputCommand); outputResult.EnsureSuccessStatusCode();
         var outputStatus = await http.GetFromJsonAsync<AgentStatus>("/api/status",Protocol.Json);

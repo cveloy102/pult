@@ -113,6 +113,40 @@ var expiryAgent = new AgentService(expiryStore, new Computer(), expiryClock);
 Check(expiryAgent.LastError is not null && expiryAgent.Snapshot().Error is not null, "skipped timer reported");
 expiryClock.Advance(3601);
 Check(expiryAgent.LastError is null && expiryAgent.Status("test").Error is null, "old agent errors expire after an hour");
+// Wake-on-LAN
+var wake = WakeTarget.Create([0x00, 0x1A, 0x2B, 0x3C, 0x4D, 0x5E], IPAddress.Parse("192.168.1.42"), IPAddress.Parse("255.255.255.0"));
+Check(wake == new WakeTarget("00:1A:2B:3C:4D:5E", "192.168.1.255"), "wake target uses MAC and subnet broadcast");
+Check(WakeTarget.Create([0x00, 0x1A, 0x2B, 0x3C, 0x4D, 0x5E], IPAddress.Parse("10.0.5.7"), IPAddress.Parse("255.255.0.0"))?.Broadcast == "10.0.255.255", "wake broadcast follows subnet mask");
+Check(WakeTarget.Create(new byte[6], IPAddress.Parse("192.168.1.42"), null) is null && WakeTarget.Create([1, 2, 3], IPAddress.Parse("192.168.1.42"), null) is null, "invalid MAC is never offered for wake");
+var wakeComputer = new WakeComputer(); var wakeAgent = new AgentService(new Store(), wakeComputer);
+Check(wakeAgent.Status("test").Wake?.Single() == wakeComputer.Target && Protocol.Capabilities.Contains("wakeOnLan"), "status exposes wake target and capability");
+Check(new AgentService(new Store(), new BrokenWakeComputer()).Status("test") is { Wake.Length: 0, Audio: not null }, "wake lookup failure does not break status");
+
+// QR pairing link
+var link = PairingLink.Create(["192.168.1.5", "10.0.0.2"], 47591, new string('A', 64), "123456", "Мой ПК & игры");
+Check(link == "pult://pair?v=1&a=192.168.1.5%3A47591%2C10.0.0.2%3A47591&f=" + new string('A', 64) + "&c=123456&n=%D0%9C%D0%BE%D0%B9%20%D0%9F%D0%9A%20%26%20%D0%B8%D0%B3%D1%80%D1%8B", "pairing QR contains addresses, pin, code and escaped name");
+
+// Timer warning
+var warnNow = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+var warnJob = new TimerJob("job", "shutdown", warnNow.AddSeconds(60));
+Check(TimerWarning.ShouldShow(warnJob, warnNow, null) && !TimerWarning.ShouldShow(warnJob with { DueAt = warnNow.AddSeconds(61) }, warnNow, null), "timer warning appears 60 seconds before");
+Check(!TimerWarning.ShouldShow(warnJob, warnNow, "job") && TimerWarning.ShouldShow(warnJob with { Id = "replacement" }, warnNow, "job"), "timer warning shown once per timer");
+Check(!TimerWarning.ShouldShow(null, warnNow, null) && !TimerWarning.ShouldShow(warnJob with { DueAt = warnNow }, warnNow, null), "no warning without a pending timer");
+
+// Network diagnosis
+const int P = NetworkDiagnosis.Private, U = NetworkDiagnosis.Public;
+string Levels(NetworkCheck[] checks) => string.Join(",", checks.Select(x => x.Level));
+var allowAny = new FirewallRule(true, true, true, P, FirewallRule.Any);
+Check(Levels(NetworkDiagnosis.Evaluate(P, P, [allowAny], true, true)) == "ok,ok,ok", "private network with allow rule is healthy");
+var publicNet = NetworkDiagnosis.Evaluate(U, U | P, [allowAny], true, true);
+Check(publicNet[1] is { Level: "warn", Fix: "network" } && publicNet[2] is { Level: "error", Fix: "firewall" }, "public network flagged; private-only rule does not cover it");
+Check(NetworkDiagnosis.Evaluate(P, P, [allowAny, new FirewallRule(true, true, false, P, FirewallRule.Tcp)], true, true)[2].Title.Contains("блокирует"), "block rule wins over allow rule");
+Check(NetworkDiagnosis.Evaluate(P, P, [], true, true)[2] is { Level: "error", Fix: "firewall" }, "missing rule reported with fix");
+Check(NetworkDiagnosis.Evaluate(P, P, [new FirewallRule(false, true, false, P, FirewallRule.Any), allowAny], true, true)[2].Level == "ok", "disabled block rule ignored");
+Check(NetworkDiagnosis.Evaluate(P, P, [new FirewallRule(true, true, true, P, FirewallRule.Tcp)], true, true).Last() is { Level: "warn", Fix: "firewall" }, "TCP-only rule warns about discovery");
+Check(Levels(NetworkDiagnosis.Evaluate(P, 0, [], true, true)) == "ok,ok,ok", "firewall off needs no rule");
+Check(NetworkDiagnosis.Evaluate(P, P, [allowAny], false, false) is [{ Level: "error" }, _, _, { Level: "warn" }], "stopped server and busy discovery reported");
+Check(NetworkDiagnosis.Evaluate(0, P, [], true, true) is [_, { Title: "Нет подключения к сети" }], "no network reported");
 Console.WriteLine($"{passed} checks passed; no real OS actions.");
 
 sealed class Store : IStateStore
@@ -128,6 +162,19 @@ sealed class Computer : IComputer
     public void Execute(string action, int? value) => Calls.Add(action);
     public AudioOutput[] GetOutputs() => [new("speakers","Speakers",selectedOutput=="speakers"),new("headphones","Headphones",selectedOutput=="headphones")];
     public void SetOutput(string id) {if(!GetOutputs().Any(x=>x.Id==id))throw new RequestException(409,"Disconnected"); selectedOutput=id; Calls.Add("audioOutput:"+id);}
+}
+sealed class WakeComputer : IComputer
+{
+    public readonly WakeTarget Target = new("00:1A:2B:3C:4D:5E", "192.168.1.255");
+    public AudioState GetAudio() => new(38, false);
+    public void Execute(string action, int? value) { }
+    public WakeTarget[] GetWakeTargets() => [Target];
+}
+sealed class BrokenWakeComputer : IComputer
+{
+    public AudioState GetAudio() => new(38, false);
+    public void Execute(string action, int? value) { }
+    public WakeTarget[] GetWakeTargets() => throw new InvalidOperationException("adapter removed");
 }
 sealed class Clock : TimeProvider
 {

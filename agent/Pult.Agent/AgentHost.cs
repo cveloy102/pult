@@ -26,6 +26,7 @@ public sealed class AgentHost : IAsyncDisposable
     private readonly X509Certificate2 certificate;
     public string Fingerprint { get; }
     public bool Running => server is not null;
+    public bool DiscoveryRunning => discovery is not null;
     public AgentInfo Info => new(Service.State.Name, Version, Protocol.Version, Protocol.Capabilities, Fingerprint);
     public static string[] Addresses => NetworkInterface.GetAllNetworkInterfaces()
         .Where(x => x.OperationalStatus == OperationalStatus.Up && x.NetworkInterfaceType != NetworkInterfaceType.Loopback)

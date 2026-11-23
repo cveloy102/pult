@@ -1,8 +1,8 @@
 #ifndef AppVersion
-  #define AppVersion "0.1.6"
+  #define AppVersion "0.2.0"
 #endif
 #ifndef SourceDir
-  #define SourceDir "..\artifacts\agent-0.1.6"
+  #define SourceDir "..\artifacts\agent-0.2.0"
 #endif
 #ifndef OutputPath
   #define OutputPath "..\artifacts"

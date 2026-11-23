@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -27,6 +28,13 @@ class Settings(private val context: Context) {
     var lastVolume: Int
         get() = prefs.getInt("lastVolume", 0)
         set(value) { prefs.edit().putInt("lastVolume", value).apply() }
+    /** Last Wake-on-LAN targets reported by the agent; not secret, kept while the PC is off. */
+    var wake: List<WakeTarget>
+        get() = runCatching {
+            val array = JSONArray(prefs.getString("wake", "[]"))
+            (0 until array.length()).map { array.getJSONObject(it).let { item -> WakeTarget(item.getString("mac"), item.getString("broadcast")) } }
+        }.getOrDefault(emptyList())
+        set(value) { prefs.edit().putString("wake", JSONArray(value.map { JSONObject().put("mac", it.mac).put("broadcast", it.broadcast) }).toString()).apply() }
     var connection: Connection?
         get() {
             val encoded = prefs.getString("connection", null) ?: return null

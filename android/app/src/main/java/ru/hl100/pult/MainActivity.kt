@@ -41,6 +41,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import java.time.OffsetDateTime
 import kotlin.math.max
 import androidx.compose.ui.text.style.TextAlign
@@ -74,13 +77,16 @@ class MainActivity : ComponentActivity() {
     private var found by mutableStateOf<List<Candidate>>(emptyList())
     private var update by mutableStateOf<AndroidRelease?>(null)
     private var pendingApk: java.io.File? = null
+    private var pairLink by mutableStateOf<PairLink?>(null)
+    private var wakeTargets by mutableStateOf(emptyList<WakeTarget>())
     private val commandMutex = Mutex()
     // Incremented by every command; a status poll started earlier must not overwrite newer state.
     private var commandEpoch = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        settings = Settings(this); theme = settings.theme; connection = settings.connection
+        settings = Settings(this); theme = settings.theme; connection = settings.connection; wakeTargets = settings.wake
+        if (savedInstanceState == null) handleLink(intent)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -93,6 +99,52 @@ class MainActivity : ComponentActivity() {
             if(System.currentTimeMillis()-prefs.getLong("lastCheck",0)>24*60*60*1000L){
                 lifecycleScope.launch {try{val release=withContext(Dispatchers.IO){AndroidUpdates.find()};prefs.edit().putLong("lastCheck",System.currentTimeMillis()).apply();if(release!=null)message="Доступен Пульт ${release.version}. Открой настройки → обновления."}catch(_:Exception){}}
             }
+        }
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleLink(intent)
+    }
+    /** pult://pair links from the agent QR code, opened by the system camera or the in-app scanner. */
+    private fun handleLink(intent: Intent?) {
+        val data = intent?.data?.toString() ?: return
+        if (!data.startsWith("pult:")) return
+        val link = PairLink.parse(data)
+        if (link == null) message = "QR-код Пульта не распознан. Создай новый код на ПК." else { pairLink = link; tab = "settings" }
+        setIntent(Intent(this, MainActivity::class.java))
+    }
+    private fun scanQr() {
+        val options = GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+        GmsBarcodeScanning.getClient(this, options).startScan()
+            .addOnSuccessListener { code -> val link = code.rawValue?.let { PairLink.parse(it) }; if (link == null) message = "Это не QR-код Пульта." else pairLink = link }
+            .addOnFailureListener { message = "Сканер недоступен. Подключи ПК через «Найти ПК в сети» или по адресу." }
+    }
+    private fun pairByLink(link: PairLink) {
+        task {
+            var failure: Exception? = null
+            for (address in link.addresses) {
+                val pc = try { withContext(Dispatchers.IO) { PultApi.probe(address) } } catch (ex: Exception) { failure = ex; continue }
+                // The QR code is the trusted channel: the certificate must match it exactly.
+                if (pc.fingerprint != link.fingerprint) { failure = Exception("Сертификат ПК не совпадает с QR-кодом. Создай новый код на ПК."); continue }
+                val result = withContext(Dispatchers.IO) { PultApi.pair(pc, link.code, Build.MODEL) }
+                settings.wake = emptyList(); wakeTargets = emptyList()
+                settings.connection = result; connection = result; status = null; connected = false
+                pairLink = null; tab = "remote"; message = "Компьютер привязан по QR-коду."; refreshStatus()
+                return@task
+            }
+            pairLink = null
+            throw failure ?: Exception("ПК не найден.")
+        }
+    }
+    private fun wakePc() {
+        val targets = wakeTargets
+        if (targets.isEmpty() || "wake" in sending) return
+        sending = sending + "wake"
+        lifecycleScope.launch {
+            try {
+                val sent = withContext(Dispatchers.IO) { Wake.send(targets) }
+                message = if (sent > 0) "Сигнал включения отправлен. ПК появится в сети через 30–90 секунд." else "Не удалось отправить сигнал. Проверь Wi-Fi."
+            } catch (ex: Exception) { message = readable(ex) } finally { sending = sending - "wake" }
         }
     }
     override fun onResume() {
@@ -120,6 +172,7 @@ class MainActivity : ComponentActivity() {
         val wasConnected = connected
         status = result; connected = true
         result.volume?.let { if (it != settings.lastVolume) settings.lastVolume = it }
+        if (result.wake.isNotEmpty() && result.wake != wakeTargets) { wakeTargets = result.wake; settings.wake = result.wake }
         // Only on reconnect: keeps widget command results visible and avoids redraws every poll.
         if (!wasConnected) updateWidget("Последний ответ: ПК доступен")
     }
@@ -217,6 +270,7 @@ class MainActivity : ComponentActivity() {
             if(themesOpen) ThemeDialog(p)
             if(outputsOpen) OutputDialog(p)
             if(candidate != null) PairDialog(p)
+            pairLink?.let { link -> AlertDialog(onDismissRequest={if(!busy)pairLink=null},title={Text("Подключить «${link.name}»?")},text={Text("Отпечаток и код взяты из QR-кода на экране ПК.\nАдрес: ${link.addresses.joinToString(", ")}" + (connection?.let { "\n\nТекущий ПК «${it.name}» будет заменён." } ?: ""))},confirmButton={TextButton(enabled=!busy,onClick={pairByLink(link)}){Text(if(busy)"Подключаю…" else "Подключить")}},dismissButton={TextButton(enabled=!busy,onClick={pairLink=null}){Text("Отмена")}}) }
             update?.let { release ->
                 AlertDialog(onDismissRequest={update=null},title={Text("Пульт ${release.version}")},text={Column { Text("Доступна новая версия Android-приложения."); Spacer(Modifier.height(10.dp)); Text(release.notes.take(600),fontSize=12.sp) }},confirmButton={TextButton(enabled=!busy,onClick={task { val apk=withContext(Dispatchers.IO){AndroidUpdates.download(this@MainActivity,release)}; update=null; pendingApk=apk; if(packageManager.canRequestPackageInstalls()){pendingApk=null;AndroidUpdates.install(this@MainActivity,apk)} else startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,android.net.Uri.parse("package:$packageName"))) }}){Text("Скачать и установить")}},dismissButton={TextButton(onClick={update=null}){Text("Позже")}})
             }
@@ -233,6 +287,10 @@ class MainActivity : ComponentActivity() {
     @Composable private fun RemoteScreen(p: Palette) {
         if(connection==null) { Text("Компьютер под рукой",fontSize=25.sp,color=p.ink); Spacer(Modifier.height(12.dp)); Text("Выключай ПК, ставь таймер и управляй звуком с телефона.",color=p.sub); Spacer(Modifier.height(18.dp)); Primary("Подключить компьютер",p){tab="settings"}; return }
         Label("ПИТАНИЕ / 01",p)
+        if(!connected && wakeTargets.isNotEmpty()) {
+            Primary(if("wake" in sending)"Отправляю сигнал…" else "Включить компьютер",p,"wake" !in sending){wakePc()}
+            Text("Wake-on-LAN: ПК должен быть подключён кабелем, а пробуждение по сети включено в BIOS и в настройках сетевой карты.",fontSize=11.sp,color=p.sub,modifier=Modifier.padding(top=8.dp,bottom=16.dp))
+        }
         Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
             ActionTile("Выключить","power",p,true,Modifier.weight(1f)){confirming="shutdown"}
             ActionTile("Заблокировать","lock",p,false,Modifier.weight(1f)){send("lock")}
@@ -312,11 +370,13 @@ class MainActivity : ComponentActivity() {
     @Composable private fun SettingsScreen(p:Palette) {
         var address by remember { mutableStateOf(connection?.address ?: "") }
         Text("Подключение",fontSize=25.sp,color=p.ink);Spacer(Modifier.height(16.dp))
+        Primary("Сканировать QR-код",p,!busy){scanQr()}
+        Text("QR-код — в агенте на ПК: «Подключить телефон».",fontSize=11.sp,color=p.sub,modifier=Modifier.padding(top=8.dp,bottom=18.dp))
         OutlinedTextField(value=address,onValueChange={address=it},label={Text("IP-адрес ПК")},placeholder={Text("192.168.1.2:47591")},singleLine=true,modifier=Modifier.fillMaxWidth(),keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Uri))
         Spacer(Modifier.height(10.dp));Primary(if(busy)"Подожди…" else "Подключить по адресу",p,!busy){task{candidate=withContext(Dispatchers.IO){PultApi.probe(address)}}}
         OutlinedButton(onClick={task{found=withContext(Dispatchers.IO){PultApi.discover()};if(found.isEmpty())message="ПК не найден. Запусти агент или введи адрес вручную."}},enabled=!busy,modifier=Modifier.fillMaxWidth().padding(top=9.dp),shape=RoundedCornerShape(p.radius.dp)){Text("Найти ПК в сети",color=p.ink)}
         found.forEach{pc->TextButton(onClick={task{candidate=withContext(Dispatchers.IO){PultApi.probe(pc.address)}}},enabled=!busy,modifier=Modifier.fillMaxWidth()){Column(Modifier.fillMaxWidth()){Text(pc.name,color=p.ink);Text(pc.address,fontSize=11.sp,color=p.sub)}}}
-        if(connection!=null)TextButton(onClick={connection=null;settings.connection=null;status=null;connected=false;settings.widgetMessage="Подключи ПК";Widgets.refresh(this@MainActivity)},enabled=!busy){Text("Забыть компьютер",color=p.sub)}
+        if(connection!=null)TextButton(onClick={connection=null;settings.connection=null;settings.wake=emptyList();wakeTargets=emptyList();status=null;connected=false;settings.widgetMessage="Подключи ПК";Widgets.refresh(this@MainActivity)},enabled=!busy){Text("Забыть компьютер",color=p.sub)}
         Spacer(Modifier.height(25.dp));Text("Оформление",fontSize=24.sp,color=p.ink)
         TextButton(onClick={themesOpen=true},modifier=Modifier.fillMaxWidth()){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("Тема оформления",color=p.ink);Text(themeName(theme)+" ›",color=p.sub)}}
         Text("Виджеты используют эту же тему.",fontSize=11.sp,color=p.sub)
@@ -353,7 +413,7 @@ class MainActivity : ComponentActivity() {
     @Composable private fun PairDialog(p:Palette) {
         val pc=candidate ?: return
         var verified by remember(pc){mutableStateOf(false)};var code by remember(pc){mutableStateOf("")}
-        AlertDialog(onDismissRequest={if(!busy)candidate=null},title={Text(pc.name)},text={Column(Modifier.verticalScroll(rememberScrollState())){Text("Сверь отпечаток с окном «Подключить телефон» на ПК.",fontSize=13.sp);Text(pc.fingerprint.chunked(4).joinToString(" "),fontFamily=FontFamily.Monospace,fontSize=12.sp,modifier=Modifier.padding(vertical=15.dp));Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=verified,onCheckedChange={verified=it});Text("Отпечаток совпадает",fontSize=12.sp)};OutlinedTextField(value=code,onValueChange={code=it.filter(Char::isDigit).take(6)},label={Text("Код с экрана ПК")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())}},confirmButton={TextButton(enabled=verified&&code.length==6&&!busy,onClick={task{val result=withContext(Dispatchers.IO){PultApi.pair(pc,code,Build.MODEL)};settings.connection=result;connection=result;candidate=null;tab="remote";message="Компьютер привязан.";refreshStatus()}}){Text("Привязать")}},dismissButton={TextButton(enabled=!busy,onClick={candidate=null}){Text("Отмена")}})
+        AlertDialog(onDismissRequest={if(!busy)candidate=null},title={Text(pc.name)},text={Column(Modifier.verticalScroll(rememberScrollState())){Text("Сверь отпечаток с окном «Подключить телефон» на ПК.",fontSize=13.sp);Text(pc.fingerprint.chunked(4).joinToString(" "),fontFamily=FontFamily.Monospace,fontSize=12.sp,modifier=Modifier.padding(vertical=15.dp));Row(verticalAlignment=Alignment.CenterVertically){Checkbox(checked=verified,onCheckedChange={verified=it});Text("Отпечаток совпадает",fontSize=12.sp)};OutlinedTextField(value=code,onValueChange={code=it.filter(Char::isDigit).take(6)},label={Text("Код с экрана ПК")},singleLine=true,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.fillMaxWidth())}},confirmButton={TextButton(enabled=verified&&code.length==6&&!busy,onClick={task{val result=withContext(Dispatchers.IO){PultApi.pair(pc,code,Build.MODEL)};settings.wake=emptyList();wakeTargets=emptyList();settings.connection=result;connection=result;candidate=null;tab="remote";message="Компьютер привязан.";refreshStatus()}}){Text("Привязать")}},dismissButton={TextButton(enabled=!busy,onClick={candidate=null}){Text("Отмена")}})
     }
     private fun checkUpdate() { task { val release=withContext(Dispatchers.IO){AndroidUpdates.find()};if(release==null)message="Установлена актуальная версия Android-приложения." else update=release } }
     @Composable private fun Primary(label:String,p:Palette,enabled:Boolean=true,action:()->Unit){Button(onClick=action,enabled=enabled,modifier=Modifier.fillMaxWidth().heightIn(min=52.dp),shape=RoundedCornerShape(p.radius.dp),colors=ButtonDefaults.buttonColors(containerColor=p.accent,contentColor=p.accentInk)){Text(label,fontSize=14.sp)}}

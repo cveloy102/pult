@@ -17,7 +17,7 @@ import javax.net.ssl.X509TrustManager
 data class Candidate(val address: String, val name: String, val fingerprint: String, val protocol: Int)
 data class TimerStatus(val action: String, val dueAt: String)
 data class AudioOutput(val id: String, val name: String, val selected: Boolean)
-data class Status(val name: String, val volume: Int?, val muted: Boolean, val timer: TimerStatus?, val error: String?, val outputs: List<AudioOutput> = emptyList(), val outputSelection: Boolean = false)
+data class Status(val name: String, val volume: Int?, val muted: Boolean, val timer: TimerStatus?, val error: String?, val outputs: List<AudioOutput> = emptyList(), val outputSelection: Boolean = false, val wake: List<WakeTarget> = emptyList())
 class ApiException(val status: Int, message: String) : Exception(message)
 
 object PultApi {
@@ -89,8 +89,13 @@ object PultApi {
         }
         val capabilities = json.optJSONArray("capabilities")
         val outputSelection = capabilities != null && (0 until capabilities.length()).any { capabilities.optString(it) == "audioOutput" }
+        val wakeJson = json.optJSONArray("wake")
+        val wake = if (wakeJson == null) emptyList() else (0 until wakeJson.length()).mapNotNull { index ->
+            val target = wakeJson.optJSONObject(index) ?: return@mapNotNull null
+            WakeTarget(target.optString("mac"), target.optString("broadcast")).takeIf { Wake.parseMac(it.mac) != null && Wake.isLocalBroadcast(it.broadcast) }
+        }
         return Status(json.getString("name"), audio?.getInt("volume"), audio?.optBoolean("muted") ?: false,
-            timer?.let { TimerStatus(it.getString("action"), it.getString("dueAt")) }, json.optString("error").takeIf { it.isNotBlank() && it != "null" }, devices, outputSelection)
+            timer?.let { TimerStatus(it.getString("action"), it.getString("dueAt")) }, json.optString("error").takeIf { it.isNotBlank() && it != "null" }, devices, outputSelection, wake)
     }
     fun command(connection: Connection, action: String, value: Int? = null, timerAction: String? = null, seconds: Int? = null, replace: Boolean = false, requestId: String = UUID.randomUUID().toString(), deviceId: String? = null) {
         val body = JSONObject().put("requestId", requestId).put("action", action).put("replace", replace)

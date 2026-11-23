@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
@@ -29,6 +30,10 @@ public partial class MainWindow : System.Windows.Window
     private TextBlock? timerHistory;
     private bool checkingUpdate;
     private string? shownError;
+    private TimerWarningWindow? warning;
+    private string? warnedTimer;
+    private StackPanel? networkPanel;
+    private System.Windows.Controls.Image? qrImage;
     public MainWindow(AgentHost host, bool demo)
     {
         this.host = host; this.demo = demo; InitializeComponent(); ApplyTheme(host.Service.State.Theme);
@@ -57,6 +62,14 @@ public partial class MainWindow : System.Windows.Window
         RunningLabel.Text = host.Running ? demo ? "● ДЕМО · без системных команд" : "● АГЕНТ ЗАПУЩЕН" : "Запуск…";
         // Called every second: use the cheap snapshot, not Status() with audio device enumeration.
         var (job, error) = host.Service.Snapshot();
+        if (TimerWarning.ShouldShow(job, DateTimeOffset.UtcNow, warnedTimer))
+        {
+            warnedTimer = job!.Id; warning?.Close();
+            var shown = new TimerWarningWindow(job, CancelActiveTimer);
+            shown.Closed += (_, _) => { if (warning == shown) warning = null; };
+            warning = shown; shown.Show();
+        }
+        if (warning is not null) { if (job is null || job.Id != warning.TimerId) warning.Close(); else warning.Update(job); }
         timerMenu.Enabled = cancelTimerMenu.Enabled = job is not null;
         timerMenu.Text = job is null ? "Нет активного таймера" : $"{ActionName(job.Action)} · {FormatRemaining(job.DueAt)}";
         tray.Text = job is null ? "Пульт" : $"Пульт · {ActionName(job.Action)} {FormatRemaining(job.DueAt)}";
@@ -76,7 +89,7 @@ public partial class MainWindow : System.Windows.Window
         {
             timerText.Text = job is null ? "Не задан" : $"{ActionName(job.Action)} · {FormatRemaining(job.DueAt)}";
         }
-        if (codeText is not null && DateTimeOffset.UtcNow >= codeExpires) codeText.Text = "Код истёк";
+        if (codeText is not null && DateTimeOffset.UtcNow >= codeExpires) { codeText.Text = "Код истёк"; if (qrImage is not null) qrImage.Opacity = 0.15; }
         if (error != shownError) { shownError = error; if (error is not null) Notice.Text = error; }
         if (!demo && host.Service.State.CheckUpdates && DateTimeOffset.UtcNow >= nextUpdateCheck)
         {
@@ -97,7 +110,7 @@ public partial class MainWindow : System.Windows.Window
         var button = new Button { Content = label, Margin = new Thickness(0, 8, 0, 7), HorizontalContentAlignment = HorizontalAlignment.Center };
         if (primary) button.Style = (Style)FindResource("Primary"); button.Click += (_, _) => { try { action(); } catch (Exception ex) { Notice.Text = ex.Message; } }; return button;
     }
-    private void Clear(string name) { Page.Children.Clear(); PageScroll.ScrollToTop(); timerText = null; timerHistory = null; codeText = null; Notice.Text = ""; }
+    private void Clear(string name) { Page.Children.Clear(); PageScroll.ScrollToTop(); timerText = null; timerHistory = null; codeText = null; networkPanel = null; qrImage = null; Notice.Text = ""; }
     private void Row(string label, TextBlock value)
     {
         var grid = new Grid { Margin = new Thickness(0, 9, 0, 9) }; grid.ColumnDefinitions.Add(new()); grid.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Auto) });
@@ -114,17 +127,57 @@ public partial class MainWindow : System.Windows.Window
         {
             CancelActiveTimer();
         })); Refresh();
+        Page.Children.Add(Text("Сеть", 13, true)); networkPanel = new StackPanel { Margin = new Thickness(0, 0, 0, 16) }; Page.Children.Add(networkPanel); RunNetworkCheck();
         Page.Children.Add(Text("История таймеров", 13, true)); timerHistory = Text("", 11, true); Page.Children.Add(timerHistory); Refresh();
     }
     private void PairPage()
     {
         Clear("pair"); var (code, expires) = host.Service.BeginPairing(); codeExpires = expires;
-        Page.Children.Add(Text("Подключить телефон", 25)); Page.Children.Add(Text("В приложении нажми «Найти ПК» или введи адрес ниже. Сверь отпечаток, затем введи этот код.", 13, true));
+        Page.Children.Add(Text("Подключить телефон", 25));
+        Page.Children.Add(Text("Отсканируй QR-код в приложении: Настройки → «Сканировать QR-код». Отпечаток и код проверятся сами.", 13, true));
+        qrImage = new System.Windows.Controls.Image { Source = QrImage(PairingLink.Create(AgentHost.Addresses, Protocol.Port, host.Fingerprint, code, host.Service.State.Name)), Width = 240, Height = 240, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 16) };
+        RenderOptions.SetBitmapScalingMode(qrImage, BitmapScalingMode.NearestNeighbor); Page.Children.Add(qrImage);
+        Page.Children.Add(Text("Без камеры: в приложении нажми «Найти ПК» или введи адрес ниже. Сверь отпечаток, затем введи код.", 13, true));
         var addresses = new TextBox { Text = string.Join(" / ", AgentHost.Addresses.Select(x => $"https://{x}:{Protocol.Port}")), IsReadOnly = true, Margin = new Thickness(0, 4, 0, 18) }; Page.Children.Add(addresses);
         codeText = Text(code[..3] + " " + code[3..], 39); Page.Children.Add(codeText); Page.Children.Add(Text("Одноразовый код действует 2 минуты.", 12, true));
         Page.Children.Add(Text("Отпечаток сертификата", 12, true));
         var fingerprint = new TextBox { Text = string.Join(" ", Enumerable.Range(0, 16).Select(i => host.Fingerprint.Substring(i * 4, 4))), IsReadOnly = true, TextWrapping = TextWrapping.Wrap, FontSize = 12, Margin = new Thickness(0, 0, 0, 15) }; Page.Children.Add(fingerprint);
         Page.Children.Add(Button("Создать новый код", PairPage));
+    }
+    private static BitmapImage QrImage(string text)
+    {
+        using var generator = new QRCoder.QRCodeGenerator();
+        using var data = generator.CreateQrCode(text, QRCoder.QRCodeGenerator.ECCLevel.M);
+        var image = new BitmapImage(); image.BeginInit(); image.CacheOption = BitmapCacheOption.OnLoad;
+        image.StreamSource = new MemoryStream(new QRCoder.PngByteQRCode(data).GetGraphic(10)); image.EndInit(); image.Freeze();
+        return image;
+    }
+    /// <summary>Called once the HTTPS server is listening: the first overview is drawn before startup finishes.</summary>
+    public void AgentStarted() => RunNetworkCheck();
+    private async void RunNetworkCheck()
+    {
+        var panel = networkPanel; if (panel is null) return;
+        panel.Children.Clear(); panel.Children.Add(Text("Проверяю сеть и брандмауэр…", 12, true));
+        var checks = await Task.Run(() => NetworkInspector.Run(host.Running, host.DiscoveryRunning));
+        if (networkPanel != panel) return;
+        panel.Children.Clear();
+        foreach (var check in checks)
+        {
+            var line = Text($"{(check.Level == "ok" ? "●" : check.Level == "warn" ? "▲" : "✕")}  {check.Title}", 13);
+            line.Margin = new Thickness(0, 0, 0, check.Level == "ok" ? 6 : 2);
+            line.SetResourceReference(TextBlock.ForegroundProperty, check.Level == "ok" ? "Ink" : "Accent"); panel.Children.Add(line);
+            if (check.Level != "ok") { var detail = Text(check.Detail, 12, true); detail.Margin = new Thickness(18, 0, 0, 8); panel.Children.Add(detail); }
+        }
+        if (checks.Any(x => x.Fix == "firewall")) panel.Children.Add(Button("Разрешить в брандмауэре", AllowFirewall, true));
+        if (checks.Any(x => x.Fix == "network")) panel.Children.Add(Button("Открыть параметры сети", NetworkInspector.OpenNetworkSettings));
+        panel.Children.Add(Button("Проверить снова", RunNetworkCheck));
+    }
+    private async void AllowFirewall()
+    {
+        if (MessageBox.Show("Windows попросит права администратора.\n\nПравила брандмауэра для Пульта будут заменены одним разрешающим правилом для частных и доменных сетей. Общедоступные сети остаются закрытыми.", "Пульт", MessageBoxButton.OKCancel) != MessageBoxResult.OK) return;
+        var allowed = await Task.Run(NetworkInspector.AllowInFirewall);
+        Notice.Text = allowed ? "Разрешение в брандмауэре добавлено." : "Разрешение не добавлено: запрос администратора отклонён или не выполнен.";
+        RunNetworkCheck();
     }
     private void RenderPhones()
     {

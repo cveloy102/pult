@@ -114,7 +114,9 @@ public sealed class AgentService
             try { audio = computer.GetAudio(); } catch { error ??= "Аудиоустройство сейчас недоступно."; }
             AudioOutput[] outputs = [];
             try { outputs = computer.GetOutputs(); } catch { error ??= "Список устройств вывода сейчас недоступен."; }
-            return new(State.Name, version, Protocol.Version, Protocol.Capabilities, State.Timer, audio, error, outputs);
+            WakeTarget[] wake = [];
+            try { wake = computer.GetWakeTargets(); } catch { /* The phone keeps the last known wake address. */ }
+            return new(State.Name, version, Protocol.Version, Protocol.Capabilities, State.Timer, audio, error, outputs, wake);
         }
     }
 
