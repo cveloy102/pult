@@ -12,13 +12,28 @@ fun timerActionName(action: String) = when (action) {
     else -> "Неизвестное действие"
 }
 
+const val THEME_SYSTEM = "system"
 const val THEME_DARK = "dark"
 const val THEME_LIGHT = "light"
 
-/** Maps any stored value to a current theme. Before 0.3 the themes were "signal", "quiet" (light) and "orbit". */
-fun normalizeTheme(theme: String?) = if (theme == THEME_LIGHT || theme == "quiet") THEME_LIGHT else THEME_DARK
+/** Maps any stored value to a current choice. Before 0.3 the themes were "signal", "quiet" (light) and "orbit"; a new install follows the system. */
+fun normalizeTheme(theme: String?) = when (theme) {
+    THEME_LIGHT, "quiet" -> THEME_LIGHT
+    THEME_DARK, "signal", "orbit" -> THEME_DARK
+    else -> THEME_SYSTEM
+}
 
-fun themeName(theme: String) = if (theme == THEME_LIGHT) "Светлая" else "Тёмная"
+/** The theme actually drawn: "system" follows the phone's dark mode. */
+fun resolveTheme(theme: String, systemDark: Boolean) = when (normalizeTheme(theme)) {
+    THEME_SYSTEM -> if (systemDark) THEME_DARK else THEME_LIGHT
+    else -> normalizeTheme(theme)
+}
+
+fun themeName(theme: String) = when (theme) {
+    THEME_LIGHT -> "Светлая"
+    THEME_DARK -> "Тёмная"
+    else -> "Как в системе"
+}
 
 /** Snackbar text after a command was accepted; null for play/pause, whose result is audible. */
 fun commandResultText(action: String, timerAction: String?, seconds: Int?): String? = when (action) {

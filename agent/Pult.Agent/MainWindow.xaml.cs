@@ -40,6 +40,12 @@ public partial class MainWindow : System.Windows.Window
     public MainWindow(AgentHost host, bool demo)
     {
         this.host = host; this.demo = demo; InitializeComponent(); ApplyTheme(host.Service.State.Theme);
+        // "Как в системе": follow the Windows light/dark switch while the agent runs.
+        SystemEvents.UserPreferenceChanged += (_, e) =>
+        {
+            if (e.Category == UserPreferenceCategory.General && Themes.Normalize(host.Service.State.Theme) == Themes.System)
+                Dispatcher.BeginInvoke(() => ApplyTheme(host.Service.State.Theme));
+        };
         VersionLabel.Text = $"{AgentHost.Version} · работает в трее";
         refresh = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         using (var iconStream = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/pult.ico")).Stream)
@@ -264,9 +270,9 @@ public partial class MainWindow : System.Windows.Window
         var name = new TextBox { Text = host.Service.State.Name, MaxLength = 80, Margin = new Thickness(0, 0, 0, 8) }; Page.Children.Add(name);
         var saveName = Button("Сохранить имя компьютера", () => { }); Page.Children.Add(saveName);
         Page.Children.Add(Section("// Тема оформления"));
-        var themes = new UniformGrid { Columns = 2, Margin = new Thickness(0, 0, 0, 4) };
+        var themes = new UniformGrid { Columns = 3, Margin = new Thickness(0, 0, 0, 4) };
         var current = Themes.Normalize(host.Service.State.Theme);
-        foreach (var (key, label) in new[] { (Themes.Dark, "Тёмная"), (Themes.Light, "Светлая") })
+        foreach (var (key, label) in new[] { (Themes.System, "Как в системе"), (Themes.Dark, "Тёмная"), (Themes.Light, "Светлая") })
         {
             var option = Button(label, () =>
             {
@@ -275,7 +281,7 @@ public partial class MainWindow : System.Windows.Window
                 Notice.Text = $"Тема «{label}» применена.";
             }, style: "Option");
             option.CommandParameter = key; option.Tag = key == current ? "on" : null;
-            option.HorizontalContentAlignment = HorizontalAlignment.Left; option.Margin = new Thickness(key == Themes.Dark ? 0 : 4, 0, key == Themes.Dark ? 4 : 0, 0);
+            option.HorizontalContentAlignment = HorizontalAlignment.Left; option.Margin = new Thickness(0, 0, key == Themes.Light ? 0 : 6, 0);
             themes.Children.Add(option);
         }
         Page.Children.Add(themes);
@@ -297,10 +303,16 @@ public partial class MainWindow : System.Windows.Window
         saveName.Click += (_, _) => { host.Service.SaveSettings(name.Text, host.Service.State.Theme, updates.IsChecked == true); Notice.Text = "Имя компьютера сохранено."; };
         Page.Children.Add(Text("Закрытие окна сворачивает Пульт в трей. Для завершения используй меню значка в трее.", 12, true));
     }
+    /// <summary>Windows "app mode": AppsUseLightTheme is 0 for dark; missing means light.</summary>
+    private static bool WindowsUsesLightTheme()
+    {
+        try { return Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 1) is not int value || value != 0; }
+        catch { return true; }
+    }
     /// <summary>Swaps the color tokens of the design code; fonts and corners are the same in both themes.</summary>
     private static void ApplyTheme(string theme)
     {
-        var colors = Themes.Normalize(theme) == Themes.Light
+        var colors = Themes.Resolve(theme, WindowsUsesLightTheme()) == Themes.Light
             ? new[] { "#F5F2EB", "#EEEBE4", "#E7E2D8", "#191918", "#68645D", "#D5D0C7", "#CF332D", "#FFFFFF", "#296744", "#D5D0C7", "#999389", "#68645D", "#FFFFFF" }
             : new[] { "#101010", "#181818", "#242220", "#E8E4D9", "#AAA79F", "#353535", "#F0443E", "#101010", "#8CDBAD", "#303030", "#79766E", "#E8E4D9", "#E8E4D9" };
         var names = new[] { "Base", "Surface", "Plate", "Ink", "Sub", "Line", "Accent", "AccentInk", "Online", "SwitchOff", "SwitchBorder", "ThumbOff", "ThumbOn" };

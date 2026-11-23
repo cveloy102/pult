@@ -3,6 +3,7 @@ package ru.hl100.pult
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -49,10 +50,11 @@ class MainActivity : ComponentActivity() {
         controller.checkUpdateOnStart(updates.getLong("lastCheck", 0), System.currentTimeMillis()) { updates.edit().putLong("lastCheck", it).apply() }
         setContent {
             val state by controller.state.collectAsState()
+            val light = resolveTheme(state.theme, isSystemInDarkTheme()) == THEME_LIGHT
             SideEffect {
                 val bars = WindowCompat.getInsetsController(window, window.decorView)
-                bars.isAppearanceLightStatusBars = state.theme == THEME_LIGHT
-                bars.isAppearanceLightNavigationBars = state.theme == THEME_LIGHT
+                bars.isAppearanceLightStatusBars = light
+                bars.isAppearanceLightNavigationBars = light
             }
             AppScreen(state, controller, onScanQr = ::scanQr, onInstallUpdate = ::installUpdate)
         }

@@ -147,10 +147,12 @@ Check(NetworkDiagnosis.Evaluate(P, P, [new FirewallRule(true, true, true, P, Fir
 Check(Levels(NetworkDiagnosis.Evaluate(P, 0, [], true, true)) == "ok,ok,ok", "firewall off needs no rule");
 Check(NetworkDiagnosis.Evaluate(P, P, [allowAny], false, false) is [{ Level: "error" }, _, _, { Level: "warn" }], "stopped server and busy discovery reported");
 Check(NetworkDiagnosis.Evaluate(0, P, [], true, true) is [_, { Title: "Нет подключения к сети" }], "no network reported");
-Check(Themes.Normalize(null) == Themes.Dark && Themes.Normalize("signal") == Themes.Dark && Themes.Normalize("orbit") == Themes.Dark, "old dark themes become dark");
+Check(Themes.Normalize("signal") == Themes.Dark && Themes.Normalize("orbit") == Themes.Dark, "old dark themes become dark");
 Check(Themes.Normalize("quiet") == Themes.Light && Themes.Normalize(Themes.Light) == Themes.Light, "old light theme becomes light");
 var themed = new AgentService(new Store(), new Computer(), clock); themed.SaveSettings("PC", "orbit", true);
 Check(themed.State.Theme == Themes.Dark, "saved theme is normalized");
+Check(Themes.Normalize(null) == Themes.System && new AgentState().Theme == Themes.System, "new install follows the system theme");
+Check(Themes.Resolve(Themes.System, systemLight: true) == Themes.Light && Themes.Resolve(Themes.System, systemLight: false) == Themes.Dark && Themes.Resolve(Themes.Dark, systemLight: true) == Themes.Dark, "system theme follows Windows");
 Console.WriteLine($"{passed} checks passed; no real OS actions.");
 
 sealed class Store : IStateStore

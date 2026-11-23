@@ -2,6 +2,7 @@ package ru.hl100.pult
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,12 +43,13 @@ import androidx.compose.ui.unit.sp
 /** Whole app screen: header, current tab, bottom navigation, snackbar and dialogs. */
 @Composable
 fun AppScreen(state: UiState, controller: PultController, onScanQr: () -> Unit, onInstallUpdate: (AndroidRelease) -> Unit) {
-    val p = palette(state.theme)
+    val shown = resolveTheme(state.theme, isSystemInDarkTheme())
+    val p = palette(shown)
     var confirming by rememberSaveable { mutableStateOf<String?>(null) }
     var themesOpen by rememberSaveable { mutableStateOf(false) }
     var outputsOpen by rememberSaveable { mutableStateOf(false) }
 
-    PultTheme(state.theme) {
+    PultTheme(shown) {
         val notices = remember { SnackbarHostState() }
         LaunchedEffect(state.message) {
             val notice = state.message

@@ -54,11 +54,13 @@ fun ThemeDialog(state: UiState, p: Palette, controller: PultController, onDismis
         title = { Text("Тема оформления") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(THEME_DARK, THEME_LIGHT).forEach { key ->
-                    val colors = palette(key)
+                listOf(THEME_SYSTEM, THEME_DARK, THEME_LIGHT).forEach { key ->
+                    // "Как в системе" previews both: the dark and the light background.
+                    val swatches = if (key == THEME_SYSTEM) listOf(palette(THEME_DARK).base, palette(THEME_LIGHT).base)
+                        else palette(key).let { listOf(it.base, it.surface, it.accent) }
                     OptionRow(themeName(key), state.theme == key, p, trailing = {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            listOf(colors.base, colors.surface, colors.accent).forEach { color ->
+                            swatches.forEach { color ->
                                 Box(Modifier.size(18.dp).background(color, RoundedCornerShape(4.dp)).border(1.dp, p.line, RoundedCornerShape(4.dp)))
                             }
                         }

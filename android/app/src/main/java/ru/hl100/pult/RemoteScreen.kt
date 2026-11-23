@@ -17,7 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -177,6 +177,7 @@ fun ActiveTimer(state: UiState, p: Palette, controller: PultController) {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun Sound(state: UiState, p: Palette, controller: PultController, onPickOutput: () -> Unit) {
     val reported = state.status?.volume
     var volume by remember { mutableFloatStateOf((reported ?: state.lastVolume).toFloat()) }
@@ -197,11 +198,16 @@ private fun Sound(state: UiState, p: Palette, controller: PultController, onPick
             onValueChangeFinished = { dragging = false; controller.setVolume(volume.toInt()) },
             valueRange = 0f..100f,
             enabled = state.canControl && reported != null,
-            colors = SliderDefaults.colors(
-                thumbColor = p.ink, activeTrackColor = p.accent, inactiveTrackColor = p.switchOff,
-                disabledThumbColor = p.sub, disabledActiveTrackColor = p.line, disabledInactiveTrackColor = p.switchOff,
-                activeTickColor = Color.Transparent, inactiveTickColor = Color.Transparent,
-            ),
+            interactionSource = remember { MutableInteractionSource() },
+            // Design code: a solid 8dp track and a 22dp rounded-square thumb, not the Material 3 split track.
+            thumb = { Box(Modifier.size(22.dp).background(if (state.canControl) p.ink else p.sub, RoundedCornerShape(Radius.thumb))) },
+            track = { slider ->
+                val range = slider.valueRange.endInclusive - slider.valueRange.start
+                val fraction = if (range > 0f) ((slider.value - slider.valueRange.start) / range).coerceIn(0f, 1f) else 0f
+                Box(Modifier.fillMaxWidth().height(8.dp).background(p.switchOff, RoundedCornerShape(3.dp))) {
+                    Box(Modifier.fillMaxWidth(fraction).height(8.dp).background(if (state.canControl) p.accent else p.line, RoundedCornerShape(3.dp)))
+                }
+            },
             modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
         )
         Box(
