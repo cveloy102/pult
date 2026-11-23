@@ -42,7 +42,7 @@ jobs:
           PULT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon :app:lintRelease :app:testReleaseUnitTest :app:assembleRelease -PversionName="$PULT_VERSION" -PversionCode="$PULT_VERSION_CODE"
+          ./gradlew --no-daemon :app:lintRelease :app:testDebugUnitTest :app:assembleRelease -PversionName="$PULT_VERSION" -PversionCode="$PULT_VERSION_CODE"
       - name: Publish only Android release
         env:
           GH_TOKEN: ${{ github.token }}
