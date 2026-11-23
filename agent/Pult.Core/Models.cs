@@ -32,7 +32,7 @@ public sealed record CommandResult(bool Accepted, bool Duplicate, string Message
 public sealed class AgentState
 {
     public string Name { get; set; } = Environment.MachineName;
-    public string Theme { get; set; } = "signal";
+    public string Theme { get; set; } = Themes.Dark;
     public string ReleaseRepository { get; set; } = "cveloy102/pult";
     public bool CheckUpdates { get; set; } = true;
     public TimerJob? Timer { get; set; }

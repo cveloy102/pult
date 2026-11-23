@@ -19,7 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
@@ -31,7 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,18 +53,16 @@ fun ThemeDialog(state: UiState, p: Palette, controller: PultController, onDismis
         onDismissRequest = onDismiss,
         title = { Text("Тема оформления") },
         text = {
-            Column {
-                listOf("signal", "quiet", "orbit").forEach { key ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(THEME_DARK, THEME_LIGHT).forEach { key ->
                     val colors = palette(key)
-                    Row(Modifier.fillMaxWidth().clickable { controller.chooseTheme(key) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = state.theme == key, onClick = { controller.chooseTheme(key) })
-                        Text(themeName(key), modifier = Modifier.weight(1f))
+                    OptionRow(themeName(key), state.theme == key, p, trailing = {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             listOf(colors.base, colors.surface, colors.accent).forEach { color ->
-                                Box(Modifier.size(20.dp).background(color, RoundedCornerShape(4.dp)).border(1.dp, p.line, RoundedCornerShape(4.dp)))
+                                Box(Modifier.size(18.dp).background(color, RoundedCornerShape(4.dp)).border(1.dp, p.line, RoundedCornerShape(4.dp)))
                             }
                         }
-                    }
+                    }) { controller.chooseTheme(key) }
                 }
             }
         },
@@ -82,11 +78,10 @@ fun OutputDialog(state: UiState, p: Palette, controller: PultController, onDismi
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = p.surface,
-        shape = RoundedCornerShape(p.radius.dp),
         tonalElevation = 0.dp,
         titleContentColor = p.ink,
         textContentColor = p.ink,
-        title = { Text("Устройство вывода", fontFamily = themeFont(state.theme), fontSize = 22.sp) },
+        title = { Text("Устройство вывода") },
         text = {
             Column {
                 Text("Системный звук Windows. Программы со своим выбором устройства могут использовать его.", fontSize = 12.sp, color = p.sub)
@@ -114,7 +109,7 @@ fun OutputDialog(state: UiState, p: Palette, controller: PultController, onDismi
 
 /** Manual pairing: compare the fingerprint with the PC window and type the one-time code. */
 @Composable
-fun PairDialog(pc: Candidate, state: UiState, controller: PultController) {
+fun PairDialog(pc: Candidate, state: UiState, p: Palette, controller: PultController) {
     var verified by remember(pc) { mutableStateOf(false) }
     var code by remember(pc) { mutableStateOf("") }
     AlertDialog(
@@ -123,16 +118,18 @@ fun PairDialog(pc: Candidate, state: UiState, controller: PultController) {
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("Сверь отпечаток с окном «Подключить телефон» на ПК.", fontSize = 13.sp)
-                Text(pc.fingerprint.chunked(4).joinToString(" "), fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.padding(vertical = 15.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = verified, onCheckedChange = { verified = it })
-                    Text("Отпечаток совпадает", fontSize = 12.sp)
-                }
+                Text(
+                    pc.fingerprint.chunked(4).joinToString(" "), fontSize = 12.sp, lineHeight = 20.sp, color = p.ink,
+                    modifier = Modifier.padding(vertical = 14.dp).fillMaxWidth().card(p, Radius.control).padding(12.dp),
+                )
+                OptionRow("Отпечаток совпадает", verified, p) { verified = !verified }
+                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = code,
                     onValueChange = { code = it.filter(Char::isDigit).take(6) },
                     label = { Text("Код с экрана ПК") },
                     singleLine = true,
+                    colors = fieldColors(p),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )

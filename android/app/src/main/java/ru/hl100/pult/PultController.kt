@@ -48,7 +48,7 @@ interface PultStore {
 
 /** Everything the screens show. Dialog visibility that has no logic stays in the UI. */
 data class UiState(
-    val theme: String = "signal",
+    val theme: String = THEME_DARK,
     val connection: Connection? = null,
     val status: Status? = null,
     val connected: Boolean = false,
@@ -320,8 +320,9 @@ class PultController(
     // ----- Settings and updates -----
 
     fun chooseTheme(key: String) {
-        store.theme = key
-        set { copy(theme = key) }
+        val theme = normalizeTheme(key)
+        store.theme = theme
+        set { copy(theme = theme) }
         refreshWidgets()
     }
 

@@ -12,11 +12,13 @@ fun timerActionName(action: String) = when (action) {
     else -> "Неизвестное действие"
 }
 
-fun themeName(theme: String) = when (theme) {
-    "quiet" -> "Тихий"
-    "orbit" -> "Орбита"
-    else -> "Сигнал"
-}
+const val THEME_DARK = "dark"
+const val THEME_LIGHT = "light"
+
+/** Maps any stored value to a current theme. Before 0.3 the themes were "signal", "quiet" (light) and "orbit". */
+fun normalizeTheme(theme: String?) = if (theme == THEME_LIGHT || theme == "quiet") THEME_LIGHT else THEME_DARK
+
+fun themeName(theme: String) = if (theme == THEME_LIGHT) "Светлая" else "Тёмная"
 
 /** Snackbar text after a command was accepted; null for play/pause, whose result is audible. */
 fun commandResultText(action: String, timerAction: String?, seconds: Int?): String? = when (action) {

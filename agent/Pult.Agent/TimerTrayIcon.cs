@@ -14,8 +14,8 @@ internal static class TimerTrayIcon
         graphics.Clear(Color.Transparent);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
         graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-        var color = action switch { "restart" => Color.FromArgb(255, 194, 92), "lock" => Color.FromArgb(181, 206, 255), _ => Color.FromArgb(240, 78, 72) };
-        using var background = new SolidBrush(Color.FromArgb(16, 16, 17));
+        var color = action switch { "restart" => Color.FromArgb(255, 194, 92), "lock" => Color.FromArgb(181, 206, 255), _ => Color.FromArgb(240, 68, 62) };
+        using var background = new SolidBrush(Color.FromArgb(16, 16, 16));
         using var ink = new SolidBrush(color);
         using var path = new GraphicsPath();
         path.AddArc(0, 0, 4, 4, 180, 90); path.AddArc(28, 0, 4, 4, 270, 90);

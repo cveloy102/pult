@@ -101,7 +101,7 @@ public sealed class AgentService
         lock (gate)
         {
             State.Name = string.IsNullOrWhiteSpace(name) ? Environment.MachineName : name.Trim()[..Math.Min(name.Trim().Length, 80)];
-            State.Theme = theme is "signal" or "quiet" or "orbit" ? theme : "signal";
+            State.Theme = Themes.Normalize(theme);
             State.CheckUpdates = updates; store.Save(State);
         }
     }

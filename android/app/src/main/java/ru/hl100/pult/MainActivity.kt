@@ -51,8 +51,8 @@ class MainActivity : ComponentActivity() {
             val state by controller.state.collectAsState()
             SideEffect {
                 val bars = WindowCompat.getInsetsController(window, window.decorView)
-                bars.isAppearanceLightStatusBars = state.theme == "quiet"
-                bars.isAppearanceLightNavigationBars = state.theme == "quiet"
+                bars.isAppearanceLightStatusBars = state.theme == THEME_LIGHT
+                bars.isAppearanceLightNavigationBars = state.theme == THEME_LIGHT
             }
             AppScreen(state, controller, onScanQr = ::scanQr, onInstallUpdate = ::installUpdate)
         }

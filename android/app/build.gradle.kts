@@ -6,8 +6,8 @@ android {
         applicationId = "ru.hl100.pult"
         minSdk = 31
         targetSdk = 36
-        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 2000
-        versionName = providers.gradleProperty("versionName").orNull ?: "0.2.0"
+        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 3000
+        versionName = providers.gradleProperty("versionName").orNull ?: "0.3.0"
     }
     buildFeatures { compose = true; buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

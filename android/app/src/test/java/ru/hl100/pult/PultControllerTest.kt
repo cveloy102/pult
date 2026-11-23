@@ -25,7 +25,7 @@ private fun status(volume: Int? = 30, error: String? = null, wake: List<WakeTarg
     Status("HL100", volume, false, null, error, wake = wake)
 
 private class FakeStore(override var connection: Connection? = PC) : PultStore {
-    override var theme = "signal"
+    override var theme = THEME_DARK
     override var checkUpdates = true
     override var widgetMessage = "Открыть Пульт"
     override var lastVolume = 0

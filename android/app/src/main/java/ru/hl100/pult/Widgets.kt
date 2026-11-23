@@ -24,18 +24,21 @@ object Widgets {
     fun update(context:Context,manager:AppWidgetManager,id:Int,full:Boolean){
         val settings=Settings(context);val connection=settings.connection;val p=palette(settings.theme)
         val views=RemoteViews(context.packageName,if(full)R.layout.widget_full else R.layout.widget_power)
-        views.setInt(R.id.widget_root,"setBackgroundResource",when(settings.theme){"quiet"->R.drawable.widget_quiet;"orbit"->R.drawable.widget_orbit;else->R.drawable.widget_signal})
+        val light=p.light
+        views.setInt(R.id.widget_root,"setBackgroundResource",if(light)R.drawable.widget_light else R.drawable.widget_dark)
         views.setTextViewText(R.id.widget_title,connection?.name?:"Пульт")
         views.setTextViewText(R.id.widget_status,if(connection==null)"Подключи компьютер" else settings.widgetMessage)
         listOf(R.id.widget_title,R.id.widget_lock).forEach{views.setTextColor(it,p.ink.toArgb())}
         views.setTextColor(R.id.widget_status,p.sub.toArgb())
         views.setTextColor(R.id.widget_shutdown,p.accentInk.toArgb())
-        views.setInt(R.id.widget_shutdown,"setBackgroundResource",when(settings.theme){"quiet"->R.drawable.button_quiet;"orbit"->R.drawable.button_orbit;else->R.drawable.button_signal})
+        views.setInt(R.id.widget_shutdown,"setBackgroundResource",if(light)R.drawable.button_light else R.drawable.button_dark)
+        val cardButton=if(light)R.drawable.button_card_light else R.drawable.button_card_dark
+        views.setInt(R.id.widget_lock,"setBackgroundResource",cardButton)
         views.setOnClickPendingIntent(R.id.widget_title,PendingIntent.getActivity(context,id*10,Intent(context,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         views.setOnClickPendingIntent(R.id.widget_shutdown,PendingIntent.getActivity(context,id*10+1,Intent(context,WidgetConfirmActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
         fun command(view:Int,action:String,value:Int?=null){val intent=Intent(context,if(full)FullWidget::class.java else PowerWidget::class.java).setAction(COMMAND).putExtra("command",action);value?.let{intent.putExtra("value",it)};val slot=when(view){R.id.widget_lock->2;R.id.widget_minus->3;else->4};views.setOnClickPendingIntent(view,PendingIntent.getBroadcast(context,id*10+slot,intent,PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))}
         command(R.id.widget_lock,"lock")
-        if(full){views.setTextColor(R.id.widget_minus,p.ink.toArgb());views.setTextColor(R.id.widget_plus,p.ink.toArgb());command(R.id.widget_minus,"volumeStep",-5);command(R.id.widget_plus,"volumeStep",5)}
+        if(full){listOf(R.id.widget_minus,R.id.widget_plus).forEach{views.setTextColor(it,p.ink.toArgb());views.setInt(it,"setBackgroundResource",cardButton)};command(R.id.widget_minus,"volumeStep",-5);command(R.id.widget_plus,"volumeStep",5)}
         manager.updateAppWidget(id,views)
     }
     fun execute(context:Context,action:String,value:Int?=null):String {

@@ -17,8 +17,8 @@ data class Connection(val address: String, val fingerprint: String, val token: S
 class Settings(private val context: Context) : PultStore {
     private val prefs = context.getSharedPreferences("pult", Context.MODE_PRIVATE)
     override var theme: String
-        get() = prefs.getString("theme", "signal") ?: "signal"
-        set(value) { prefs.edit().putString("theme", value).apply() }
+        get() = normalizeTheme(prefs.getString("theme", null))
+        set(value) { prefs.edit().putString("theme", normalizeTheme(value)).apply() }
     override var checkUpdates: Boolean
         get() = prefs.getBoolean("checkUpdates", true)
         set(value) { prefs.edit().putBoolean("checkUpdates", value).apply() }
